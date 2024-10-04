@@ -1,0 +1,13 @@
+enum PositionSide {
+    SUPPLY
+    BORROW
+}
+
+type Account @entity {
+    "{user_address}-{pool_address}"
+    id: ID!
+    "{user_address}"
+    account: String!
+    "{pool_address}"
+    pool: String!
+}

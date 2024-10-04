@@ -1,0 +1,17 @@
+{
+  "name": "sentio-processors",
+  "version": "1.0.0-alpha",
+  "repository": "https://github.com/delta-hq/sentio-processors",
+  "author": "melotik <dylanmelotik@gmail.com>",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sentio/sdk": "^2.43.2"
+  },
+  "devDependencies": {
+    "@sentio/cli": "^2.21.2"
+  },
+  "scripts": {
+    "create": "yarn sentio create --subproject --directory processors --name"
+  }
+}
