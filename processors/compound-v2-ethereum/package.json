@@ -3,6 +3,13 @@
   "name": "compound-v2-ethereum",
   "version": "1.0.0",
   "type": "module",
+  "dependencies": {
+    "@sentio/sdk": "^2.43.2"
+  },
+  "devDependencies": {
+    "@sentio/cli": "^2.21.2",
+    "typescript": "^5.4.5"
+  },
   "scripts": {
     "build": "sentio build",
     "gen": "sentio gen",

@@ -12,6 +12,7 @@
     "@sentio/cli": "^2.21.2"
   },
   "scripts": {
-    "create": "yarn sentio create --subproject --directory processors --name"
+    "create": "yarn sentio create --subproject --directory processors --name",
+    "login": "yarn sentio login --api-key"
   }
 }
