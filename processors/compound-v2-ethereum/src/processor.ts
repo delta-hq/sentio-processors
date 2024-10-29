@@ -161,31 +161,46 @@ async function positionSnapshot(block: BlockParams, ctx: ContractContext<CToken,
   const pool = pools.get(ctx.contract.address)!
   const tokens = poolInfo.get(ctx.contract.address)!
   
+  // Get exchange rate once for all accounts
   const exchangeRateStored = await ctx.contract.exchangeRateStored()
-
-  for await (const accountEntity of ctx.store.listIterator(Account, [{ field: "pool", op: "=", value: ctx.contract.address}])) {
-      const accountAddress = accountEntity.account;
-      
-      const borrowBalanceStored = await ctx.contract.borrowBalanceStored(accountAddress) // underlying amount
-      const balanceOf = await ctx.contract.balanceOf(accountAddress) // in cTokens
-
-      const borrow_amount = scaleDown(borrowBalanceStored, tokens.underlyingInfo.decimal)
-      const normalizeDecimals = 18 - 8 + tokens.underlyingInfo.decimal + tokens.receiptInfo.decimal
-      const supplied_amount = scaleDown(balanceOf * exchangeRateStored, normalizeDecimals)
-
-      ctx.eventLogger.emit('positionSnapshot', {
-        timestamp: block.timestamp,
-        chain_id: ctx.chainId,
-        pool_address: pool.pool_address,
-        underlying_token_address: pool.underlying_token_address,
-        underlying_token_symbol: pool.underlying_token_symbol,
-        user_address: accountAddress,
-        supplied_amount: supplied_amount,
-        supplied_amount_usd: 0.0,
-        borrowed_amount: borrow_amount,
-        borrowed_amount_usd: 0.0
-      })
+  
+  // Get all accounts first
+  const accounts: Account[] = []
+  for await (const account of ctx.store.listIterator(Account, [{
+    field: "pool",
+    op: "=",
+    value: ctx.contract.address
+  }])) {
+    accounts.push(account)
   }
+
+  // Process all accounts in parallel
+  await Promise.all(accounts.map(async (accountEntity) => {
+    const accountAddress = accountEntity.account
+    
+    // Get both balances in parallel
+    const [borrowBalanceStored, balanceOf] = await Promise.all([
+      ctx.contract.borrowBalanceStored(accountAddress),
+      ctx.contract.balanceOf(accountAddress)
+    ])
+
+    const borrow_amount = scaleDown(borrowBalanceStored, tokens.underlyingInfo.decimal)
+    const normalizeDecimals = 18 - 8 + tokens.underlyingInfo.decimal + tokens.receiptInfo.decimal
+    const supplied_amount = scaleDown(balanceOf * exchangeRateStored, normalizeDecimals)
+
+    ctx.eventLogger.emit('positionSnapshot', {
+      timestamp: block.timestamp,
+      chain_id: ctx.chainId,
+      pool_address: pool.pool_address,
+      underlying_token_address: pool.underlying_token_address,
+      underlying_token_symbol: pool.underlying_token_symbol,
+      user_address: accountAddress,
+      supplied_amount: supplied_amount,
+      supplied_amount_usd: 0.0,
+      borrowed_amount: borrow_amount,
+      borrowed_amount_usd: 0.0
+    })
+  }))
 }
 
 async function snapshots(block: BlockParams, ctx: ContractContext<CToken, CTokenBoundContractView>) {
