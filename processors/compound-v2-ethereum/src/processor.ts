@@ -1,6 +1,6 @@
 import { ContractContext, EthChainId } from "@sentio/sdk/eth";
 import { ComptrollerProcessor, CTokenProcessor, CTokenProcessorTemplate } from "./types/eth/index.js";
-import { BorrowEvent, CToken, CTokenBoundContractView, CTokenContext, getCTokenContract, getCTokenContractOnContext, MintEvent, RedeemEvent } from "./types/eth/ctoken.js";
+import { BorrowEvent, CToken, CTokenBoundContractView, CTokenContext, getCTokenContract, getCTokenContractOnContext, MintEvent, RedeemEvent, TransferEvent } from "./types/eth/ctoken.js";
 import { token } from '@sentio/sdk/utils'
 import { ComptrollerContext, MarketListedEvent } from "./types/eth/comptroller.js";
 import { scaleDown } from "@sentio/sdk";
@@ -23,7 +23,7 @@ const pools = new Map<string, Pool>()
 
 const poolInfo = new Map<string, {receiptInfo: token.TokenInfo, underlyingInfo: token.TokenInfo}>()
 
-async function onEvent(event: MintEvent | BorrowEvent, ctx: CTokenContext) {
+async function onEvent(event: MintEvent | BorrowEvent | RedeemEvent, ctx: CTokenContext) {
     const args = event.args.toObject()
     const pool = pools.get(event.address)
     if (!pool) {
@@ -53,6 +53,21 @@ async function onEvent(event: MintEvent | BorrowEvent, ctx: CTokenContext) {
         pool: event.address,
       })
       await ctx.store.upsert(supplier)
+    } else if (event.name = "Redeem") {
+      ctx.eventLogger.emit(event.name, {
+        timestamp: ctx.timestamp,
+        chain_id: ctx.chainId,
+        block_number: event.blockNumber,
+        log_index: event.index,
+        transaction_hash: event.transactionHash,
+        user_address: args.redeemer,
+        taker_address: args.redeemer,
+        pool_address: event.address,
+        token_address: pool!.underlying_token_address,
+        amount: scaleDown(args.redeemAmount, info!.underlyingInfo.decimal),
+        amount_usd: 0.0,
+        event_type: "withdrawal"
+      })
     } else if (event.name = "Borrow") {
       ctx.eventLogger.emit(event.name, {
         timestamp: ctx.timestamp,
@@ -76,6 +91,10 @@ async function onEvent(event: MintEvent | BorrowEvent, ctx: CTokenContext) {
       })
       await ctx.store.upsert(borrower)
     }
+}
+
+async function onTransfer(event: TransferEvent, ctx: CTokenContext) {
+  
 }
 
 async function createPool(event: MarketListedEvent, ctx: ComptrollerContext) {
@@ -157,50 +176,55 @@ async function poolSnapshot(block: BlockParams, ctx: ContractContext<CToken, CTo
     })
 }
 
-async function positionSnapshot(block: BlockParams, ctx: ContractContext<CToken, CTokenBoundContractView>) {
-  const pool = pools.get(ctx.contract.address)!
-  const tokens = poolInfo.get(ctx.contract.address)!
+// async function positionSnapshot(block: BlockParams, ctx: ContractContext<CToken, CTokenBoundContractView>) {
+//   const pool = pools.get(ctx.contract.address)!
+//   const tokens = poolInfo.get(ctx.contract.address)!
   
-  // Get exchange rate once for all accounts
-  const exchangeRateStored = await ctx.contract.exchangeRateStored()
+//   // Get exchange rate once for all accounts
+//   const exchangeRateStored = await ctx.contract.exchangeRateStored()
   
-  // Get all accounts first
-  const accounts: Account[] = []
-  for await (const account of ctx.store.listIterator(Account, [{
-    field: "pool",
-    op: "=",
-    value: ctx.contract.address
-  }])) {
-    accounts.push(account)
-  }
+//   // Get all accounts first
+//   const accounts: Account[] = []
+//   for await (const account of ctx.store.listIterator(Account, [{
+//     field: "pool",
+//     op: "=",
+//     value: ctx.contract.address
+//   }])) {
+//     accounts.push(account)
+//   }
 
-  // Process all accounts in parallel
-  await Promise.all(accounts.map(async (accountEntity) => {
-    const accountAddress = accountEntity.account
+//   // Process all accounts in parallel
+//   await Promise.all(accounts.map(async (accountEntity) => {
+//     const accountAddress = accountEntity.account
     
-    // Get both balances in parallel
-    const [borrowBalanceStored, balanceOf] = await Promise.all([
-      ctx.contract.borrowBalanceStored(accountAddress),
-      ctx.contract.balanceOf(accountAddress)
-    ])
+//     // Get both balances in parallel
+//     const [borrowBalanceStored, balanceOf] = await Promise.all([
+//       ctx.contract.borrowBalanceStored(accountAddress),
+//       ctx.contract.balanceOf(accountAddress)
+//     ])
 
-    const borrow_amount = scaleDown(borrowBalanceStored, tokens.underlyingInfo.decimal)
-    const normalizeDecimals = 18 - 8 + tokens.underlyingInfo.decimal + tokens.receiptInfo.decimal
-    const supplied_amount = scaleDown(balanceOf * exchangeRateStored, normalizeDecimals)
+//     const borrow_amount = scaleDown(borrowBalanceStored, tokens.underlyingInfo.decimal)
+//     const normalizeDecimals = 18 - 8 + tokens.underlyingInfo.decimal + tokens.receiptInfo.decimal
+//     const supplied_amount = scaleDown(balanceOf * exchangeRateStored, normalizeDecimals)
 
-    ctx.eventLogger.emit('positionSnapshot', {
-      timestamp: block.timestamp,
-      chain_id: ctx.chainId,
-      pool_address: pool.pool_address,
-      underlying_token_address: pool.underlying_token_address,
-      underlying_token_symbol: pool.underlying_token_symbol,
-      user_address: accountAddress,
-      supplied_amount: supplied_amount,
-      supplied_amount_usd: 0.0,
-      borrowed_amount: borrow_amount,
-      borrowed_amount_usd: 0.0
-    })
-  }))
+//     ctx.eventLogger.emit('positionSnapshot', {
+//       timestamp: block.timestamp,
+//       chain_id: ctx.chainId,
+//       pool_address: pool.pool_address,
+//       underlying_token_address: pool.underlying_token_address,
+//       underlying_token_symbol: pool.underlying_token_symbol,
+//       user_address: accountAddress,
+//       supplied_amount: supplied_amount,
+//       supplied_amount_usd: 0.0,
+//       borrowed_amount: borrow_amount,
+//       borrowed_amount_usd: 0.0
+//     })
+//   }))
+// }
+
+async function positionSnapshot(block: BlockParams, ctx: ContractContext<CToken, CTokenBoundContractView>) {
+  // calculate current position balance of each user
+
 }
 
 async function snapshots(block: BlockParams, ctx: ContractContext<CToken, CTokenBoundContractView>) {
@@ -214,6 +238,8 @@ const ETH_BLOCKS_PER_DAY = 6646
 
 const poolTemplate = new CTokenProcessorTemplate()
   .onEventMint(onEvent)
+  .onEventRedeem(onEvent)
+  .onEventTransfer(onTransfer)
   .onTimeInterval(snapshots, MINUTES_PER_DAY, ETH_BLOCKS_PER_DAY)
 
 ComptrollerProcessor.bind({address: "0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B", startBlock: 7710671})

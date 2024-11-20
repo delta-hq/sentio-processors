@@ -10,4 +10,6 @@ type Account @entity {
     account: String!
     "{pool_address}"
     pool: String!
+    "cTokenAmount"
+    cTokenBalance: BigInt!
 }
