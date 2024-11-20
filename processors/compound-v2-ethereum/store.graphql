@@ -9,7 +9,38 @@ type Account @entity {
     "{user_address}"
     account: String!
     "{pool_address}"
-    pool: String!
+    pool: Pool!
     "cTokenAmount"
     cTokenBalance: BigInt!
+    "Latest borrow from borrow and repay"
+    borrowsNew: BigInt!
+    "Last borrow update borrow index"
+    lastAccountBorrowIndex: BigInt!
+}
+
+type Pool @entity {
+    "{pool_address}"
+    id: ID!
+    "Borrow index, from AccrueInterest()"
+    borrowIndex: BigInt!
+    "Chain ID"
+    chainId: Int!
+    "Creation block number"
+    creationBlockNumber: BigInt!
+    "Creation timestamp"
+    creationTimestamp: BigInt!
+    "Underlying token address"
+    underlyingTokenAddress: String!
+    "Underlying token symbol"
+    underlyingTokenSymbol: String!
+    "Underlying token decimals"
+    underlyingTokenDecimals: Int!
+    "Receipt token address (cToken)"
+    receiptTokenAddress: String!
+    "Receipt token symbol"
+    receiptTokenSymbol: String!
+    "Receipt token decimals"
+    receiptTokenDecimals: Int!
+    "Pool type"
+    poolType: String!
 }
