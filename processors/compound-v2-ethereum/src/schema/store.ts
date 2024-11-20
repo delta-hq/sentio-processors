@@ -26,9 +26,76 @@ export class Account extends AbstractEntity  {
 	account: String
 
 	@Required
-	@Column("String")
-	pool: String
+	@One("Pool")
+	pool: Promise<Pool>
+
+	poolID: ID
+
+	@Required
+	@Column("BigInt")
+	cTokenBalance: BigInt
+
+	@Required
+	@Column("BigInt")
+	borrowsNew: BigInt
+
+	@Required
+	@Column("BigInt")
+	lastAccountBorrowIndex: BigInt
   constructor(data: Partial<Account>) {super()}
+}
+
+@Entity("Pool")
+export class Pool extends AbstractEntity  {
+
+	@Required
+	@Column("ID")
+	id: ID
+
+	@Required
+	@Column("BigInt")
+	borrowIndex: BigInt
+
+	@Required
+	@Column("Int")
+	chainId: Int
+
+	@Required
+	@Column("BigInt")
+	creationBlockNumber: BigInt
+
+	@Required
+	@Column("BigInt")
+	creationTimestamp: BigInt
+
+	@Required
+	@Column("String")
+	underlyingTokenAddress: String
+
+	@Required
+	@Column("String")
+	underlyingTokenSymbol: String
+
+	@Required
+	@Column("Int")
+	underlyingTokenDecimals: Int
+
+	@Required
+	@Column("String")
+	receiptTokenAddress: String
+
+	@Required
+	@Column("String")
+	receiptTokenSymbol: String
+
+	@Required
+	@Column("Int")
+	receiptTokenDecimals: Int
+
+	@Required
+	@Column("String")
+	poolType: String
+  constructor(data: Partial<Pool>) {super()}
 }
 
 
@@ -43,11 +110,45 @@ type Account @entity {
     "{user_address}"
     account: String!
     "{pool_address}"
-    pool: String!
+    pool: Pool!
+    "cTokenAmount"
+    cTokenBalance: BigInt!
+    "Latest borrow from borrow and repay"
+    borrowsNew: BigInt!
+    "Last borrow update borrow index"
+    lastAccountBorrowIndex: BigInt!
+}
+
+type Pool @entity {
+    "{pool_address}"
+    id: ID!
+    "Borrow index, from AccrueInterest()"
+    borrowIndex: BigInt!
+    "Chain ID"
+    chainId: Int!
+    "Creation block number"
+    creationBlockNumber: BigInt!
+    "Creation timestamp"
+    creationTimestamp: BigInt!
+    "Underlying token address"
+    underlyingTokenAddress: String!
+    "Underlying token symbol"
+    underlyingTokenSymbol: String!
+    "Underlying token decimals"
+    underlyingTokenDecimals: Int!
+    "Receipt token address (cToken)"
+    receiptTokenAddress: String!
+    "Receipt token symbol"
+    receiptTokenSymbol: String!
+    "Receipt token decimals"
+    receiptTokenDecimals: Int!
+    "Pool type"
+    poolType: String!
 }`
 DatabaseSchema.register({
   source,
   entities: {
-    "Account": Account
+    "Account": Account,
+		"Pool": Pool
   }
 })
