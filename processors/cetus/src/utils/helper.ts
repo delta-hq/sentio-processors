@@ -3,14 +3,32 @@ import { SuiAddressContext, SuiContext, SuiObjectChangeContext, SuiObjectContext
 import { getPriceByType } from "@sentio/sdk/utils";
 import { PoolInfo, PoolTokenState, UserState, UserPosition } from "../schema/store.js";
 import { BigDecimal } from "@sentio/sdk";
-import { i32, pool } from "../types/sui/0x40b6713907acadc6c8b8d9d98f36d2f24f80bd08440d5477f9f868e3b5e1e12d.js";
-
+import { i32 } from "../types/sui/0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57.js";
 
 /***************************************************
             PoolInfo handling functions 
 ***************************************************/
+export function getCoinFullAddress(type: string) {
+    let coin_a_address = ""
+    let coin_b_address = ""
+
+    const regex_a = /<[^,]+,/g;
+    const regex_b = /0x[^\s>]+>/g;
+    const matches_a = type.match(regex_a)
+    const matches_b = type.match(regex_b)
+    if (matches_a) {
+        coin_a_address = matches_a[0].slice(1, -1)
+    }
+    if (matches_b) {
+        coin_b_address = matches_b[0].slice(0, -1)
+    }
+    return [coin_a_address, coin_b_address]
+
+    return ["", ""]
+}
+
 export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
-    let [symbol0, symbol1, decimals0, decimals1, token0, token1, fee, tick_spacing] = ["", "", 0, 0, "", "", 0, 0];
+    let [symbol0, symbol1, decimals0, decimals1, token0, token1, fee, current_tick, tick_spacing] = ["", "", 0, 0, "", "", 0, 0, 0];
 
     try {
         const obj = await ctx.client.getObject({
@@ -18,11 +36,20 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
             options: { showType: true, showContent: true },
         });
         if (obj && obj.data.content.dataType == "moveObject") {
-            token0 = `0x${(obj.data.content.fields as any).type_x.fields.name}`;
-            token1 = `0x${(obj.data.content.fields as any).type_y.fields.name}`;
+            // token0 = `0x${(obj.data.content.fields as any).coin_type_b}`;
+            // token1 = `0x${(obj.data.content.fields as any).coin_type_b}`;
+
+            let type = obj.data.type;
+            if (type) {
+                [token0, token1] = getCoinFullAddress(type)
+            }
 
             const metadataToken0 = await ctx.client.getCoinMetadata({ coinType: token0 });
             const metadataToken1 = await ctx.client.getCoinMetadata({ coinType: token1 });
+
+            fee = (obj.data?.content.fields as any).fee_rate;
+            tick_spacing = (obj.data?.content.fields as any).tick_spacing;
+            current_tick = (obj.data?.content.fields as any).current_tick_index.fields.bits;
 
             decimals0 = metadataToken0.decimals;
             decimals1 = metadataToken1.decimals;
@@ -43,9 +70,10 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
         decimals_0: decimals0,
         decimals_1: decimals1,
         fee_rate: BigDecimal(fee),
-        token_0: token0,
-        token_1: token1,
+        current_tick: BigDecimal(current_tick),
         tick_spacing: BigDecimal(tick_spacing),
+        token_0: token0,
+        token_1: token1
     });
     return Promise.resolve(poolInfo);
 }
