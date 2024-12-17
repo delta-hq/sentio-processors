@@ -309,8 +309,8 @@ const removeLiquidityEventHandler = async (event: liquidity.RemoveLiquidityEvent
         transaction_from_address: sender,
         event_address: "burn",
         pool_address: pool_id,
-        tick_lower: lower_tick_index,
-        tick_upper: upper_tick_index,
+        tick_lower: Number(lower_tick_index),
+        tick_upper: Number(upper_tick_index),
         current_tick: poolInfo.current_tick,
         tick_spacing: poolInfo.tick_spacing,
         nft_token_id: pool_id,
@@ -460,6 +460,6 @@ PROTOCOLS.forEach((protocol) => {
     Add event handlers for all pools
 ***************************************************/
 SuiObjectTypeProcessor.bind({
-    objectType: pool.Pool.type(),
+    objectType: pool.Pool.type()
 }).
     onObjectChange(transferEventHandler);

@@ -1,5 +1,5 @@
 import { SuiChainId } from "@sentio/chain";
-import { BigDecimal } from "@sentio/sdk";
+import { BigDecimal, BigInteger } from "@sentio/sdk";
 import { SuiAddressContext, SuiAddressProcessor, SuiContext } from "@sentio/sdk/sui";
 import { } from "@sentio/sdk/utils";
 import {
@@ -14,6 +14,7 @@ import { TypeDescriptor } from "@sentio/sdk/move";
 
 import { SuiObjectChange } from "@mysten/sui/client"
 import { SuiGlobalProcessor, SuiNetwork, SuiObjectChangeContext, SuiObjectTypeProcessor, SuiObjectProcessor } from "@sentio/sdk/sui"
+import { TickMath } from "@cetusprotocol/cetus-sui-clmm-sdk";
 
 
 /***************************************************
@@ -50,7 +51,7 @@ async function process(ctx: SuiAddressContext, poolState: PoolTokenState): Promi
 
             const isToken0 = poolInfo.token_0 == poolState.token_address;
 
-            const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).reserve_x : (obj.data.content.fields as any).reserve_y;
+            const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).coin_a : (obj.data.content.fields as any).coin_b;
             const price = await helper.getTokenPrice(ctx, poolState.token_address);
             const currentTokenAmount = BigInt(currentTokenAmountRaw).scaleDown(isToken0 ? poolInfo.decimals_0 : poolInfo.decimals_1);
 
@@ -254,8 +255,8 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
         transaction_from_address: sender,
         event_address: "mint",
         pool_address: pool,
-        tick_lower: tick_lower,
-        tick_upper: tick_upper,
+        tick_lower: Number(tick_lower.bits),
+        tick_upper: Number(tick_upper.bits),
         current_tick: poolInfo.current_tick,
         tick_spacing: poolInfo.tick_spacing,
         nft_token_id: pool,
@@ -297,8 +298,8 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
         transaction_from_address: sender,
         event_address: "burn",
         pool_address: pool,
-        tick_lower: tick_lower,
-        tick_upper: tick_upper,
+        tick_lower: Number(tick_lower.bits),
+        tick_upper: Number(tick_upper.bits),
         current_tick: poolInfo.current_tick,
         tick_spacing: poolInfo.tick_spacing,
         nft_token_id: pool,

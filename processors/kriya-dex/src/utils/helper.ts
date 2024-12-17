@@ -146,7 +146,6 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         const userState = await getOrCreateUserState(ctx, user);
 
         // check if there is a position for this user in that pool in that range
-        // const userPositionId = `${positionId}_${poolId}_${user}_${lowerTick}_${upperTick}`;
         const userPositionId = `${positionId}_${user}`;
         let userPosition = await ctx.store.get(UserPosition, userPositionId);
 

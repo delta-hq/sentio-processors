@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@mysten/sui.js": "^0.54.1",
-    "@sentio/sdk": "^2.50.1"
+    "@sentio/sdk": "^2.53.2"
   },
   "devDependencies": {
     "@sentio/cli": "^2.23.0",
