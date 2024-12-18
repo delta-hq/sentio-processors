@@ -16,7 +16,7 @@
     "@sentio/sdk": "^2.53.2"
   },
   "devDependencies": {
-    "@sentio/cli": "^2.23.0",
+    "@sentio/cli": "^2.23.3",
     "@trivago/prettier-plugin-sort-imports": "^5.1.0",
     "prettier": "3.4.2",
     "typescript": "^5.5.2"

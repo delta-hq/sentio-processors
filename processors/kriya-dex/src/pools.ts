@@ -35,8 +35,6 @@ const PROTOCOLS = new Set<ProtocolConfigType>(
       Snapshot processing functions 
 ***************************************************/
 async function process(ctx: SuiAddressContext, poolState: PoolTokenState): Promise<PoolTokenState> {
-    // Add your processing logic here
-
     try {
         const obj = await ctx.client.getObject({
             id: poolState.pool_address,
