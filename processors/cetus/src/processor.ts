@@ -28,7 +28,7 @@ type ProtocolConfigType = {
 const protocolConfig: ProtocolConfigType = {
     network: SuiChainId.SUI_MAINNET,
     address: "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
-    checkpoiont: 68354902n
+    checkpoiont: 1500000n
 };
 const PROTOCOLS = new Set<ProtocolConfigType>(
     [protocolConfig]
@@ -41,7 +41,7 @@ async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTo
     // Add your processing logic here
 
     try {
-        console.log("Snapshot Pool state", poolState);
+        console.log("Snapshot for poolState", poolState.id);
         const obj = await ctx.client.getObject({
             id: poolState.pool_address,
             options: { showType: true, showContent: true },
@@ -53,17 +53,11 @@ async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTo
 
                 const isToken0 = poolInfo.token_0 == poolState.token_address;
 
-                console.log("Snapshot Pool state poolInfo", poolInfo);
+                console.log("Snapshot poolState with poolInfo", poolInfo);
 
                 const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).coin_a : (obj.data.content.fields as any).coin_b;
                 const price = await helper.getTokenPrice(ctx, poolState.token_address);
                 const currentTokenAmount = BigInt(currentTokenAmountRaw).scaleDown(isToken0 ? poolInfo.decimals_0 : poolInfo.decimals_1);
-
-                console.log("Snapshot Pool state currentTokenAmountRaw", currentTokenAmountRaw);
-                console.log("Snapshot Pool state currentTokenAmount", currentTokenAmount);
-                console.log("Snapshot Pool state price", price);
-
-                console.log("Snapshot Pool state", poolState);
 
                 ctx.eventLogger.emit("PoolSnaphot", {
                     timestamp: ctx.timestamp,
@@ -432,7 +426,6 @@ PROTOCOLS.forEach((protocol) => {
         network: protocol.network,
         startCheckpoint: protocol.checkpoiont,
     }).onTimeInterval(async (_, ctx) => {
-        console.log("Processing Snapshot");
         await createPoolSnapshots(ctx);
         await createUserScoreSnapshots(ctx);
     }, 24 * 60, 24 * 60);

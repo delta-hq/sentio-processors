@@ -189,11 +189,11 @@ type PoolInfo @entity {
   fee_rate: BigDecimal
   current_tick: BigDecimal
   tick_spacing: BigDecimal
-  symbol_0: String,
-  symbol_1: String,
-  decimals_0: Int,
-  decimals_1: Int,
-  token_0: String,
+  symbol_0: String
+  symbol_1: String
+  decimals_0: Int
+  decimals_1: Int
+  token_0: String
   token_1: String
 }
 
@@ -214,7 +214,8 @@ type UserPosition @entity {
   lower_tick: BigInt!
   upper_tick: BigInt!
   liquidity: BigDecimal!
-}`
+}
+`
 DatabaseSchema.register({
   source,
   entities: {
