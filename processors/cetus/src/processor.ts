@@ -28,7 +28,7 @@ type ProtocolConfigType = {
 const protocolConfig: ProtocolConfigType = {
     network: SuiChainId.SUI_MAINNET,
     address: "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
-    checkpoiont: 38860558n
+    checkpoiont: 68354902n
 };
 const PROTOCOLS = new Set<ProtocolConfigType>(
     [protocolConfig]
@@ -37,44 +37,58 @@ const PROTOCOLS = new Set<ProtocolConfigType>(
 /***************************************************
       Snapshot processing functions 
 ***************************************************/
-async function process(ctx: SuiAddressContext, poolState: PoolTokenState): Promise<PoolTokenState> {
+async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTokenState): Promise<PoolTokenState> {
     // Add your processing logic here
 
     try {
+        console.log("Snapshot Pool state", poolState);
         const obj = await ctx.client.getObject({
             id: poolState.pool_address,
             options: { showType: true, showContent: true },
         });
         if (obj && obj.data.content.dataType == "moveObject") {
-            // get the pool info and fee
-            const poolInfo = await helper.getOrCreatePoolInfo(ctx, poolState.pool_address);
+            try {
+                // get the pool info and fee
+                const poolInfo = await helper.getOrCreatePoolInfo(ctx, poolState.pool_address);
 
-            const isToken0 = poolInfo.token_0 == poolState.token_address;
+                const isToken0 = poolInfo.token_0 == poolState.token_address;
 
-            const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).coin_a : (obj.data.content.fields as any).coin_b;
-            const price = await helper.getTokenPrice(ctx, poolState.token_address);
-            const currentTokenAmount = BigInt(currentTokenAmountRaw).scaleDown(isToken0 ? poolInfo.decimals_0 : poolInfo.decimals_1);
+                console.log("Snapshot Pool state poolInfo", poolInfo);
 
-            ctx.eventLogger.emit("PoolSnaphot", {
-                timestamp: ctx.timestamp,
-                pool_address: poolState.pool_address,
-                token_address: poolState.token_address,
-                token_symbol: poolState.token_symbol,
-                token_amount: currentTokenAmount,
-                token_amount_usd: currentTokenAmount.multipliedBy(price),
-                volume_amount: poolState.volume_amount,
-                volume_usd: poolState.volume_usd,
-                fee_rate: poolInfo.fee_rate,
-                total_fees_usd: BigDecimal(0),
-                user_fees_usd: BigDecimal(0),
-                protocol_fees_usd: BigDecimal(0),
-            });
+                const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).coin_a : (obj.data.content.fields as any).coin_b;
+                const price = await helper.getTokenPrice(ctx, poolState.token_address);
+                const currentTokenAmount = BigInt(currentTokenAmountRaw).scaleDown(isToken0 ? poolInfo.decimals_0 : poolInfo.decimals_1);
 
-            // reset the token amount and volume
-            poolState.token_amount = BigDecimal(0);
-            poolState.token_amount_usd = BigDecimal(0);
-            poolState.volume_amount = BigDecimal(0);
-            poolState.volume_usd = BigDecimal(0);
+                console.log("Snapshot Pool state currentTokenAmountRaw", currentTokenAmountRaw);
+                console.log("Snapshot Pool state currentTokenAmount", currentTokenAmount);
+                console.log("Snapshot Pool state price", price);
+
+                console.log("Snapshot Pool state", poolState);
+
+                ctx.eventLogger.emit("PoolSnaphot", {
+                    timestamp: ctx.timestamp,
+                    pool_address: poolState.pool_address,
+                    token_address: poolState.token_address,
+                    token_symbol: poolState.token_symbol,
+                    token_amount: currentTokenAmount,
+                    token_amount_usd: currentTokenAmount.multipliedBy(price),
+                    volume_amount: poolState.volume_amount,
+                    volume_usd: poolState.volume_usd,
+                    fee_rate: poolInfo.fee_rate,
+                    total_fees_usd: BigDecimal(0),
+                    user_fees_usd: BigDecimal(0),
+                    protocol_fees_usd: BigDecimal(0),
+                });
+
+                // reset the token amount and volume
+                poolState.token_amount = BigDecimal(0);
+                poolState.token_amount_usd = BigDecimal(0);
+                poolState.volume_amount = BigDecimal(0);
+                poolState.volume_usd = BigDecimal(0);
+            }
+            catch (error) {
+                console.error("Failed to create Snapshot", error);
+            }
         }
     } catch (error) {
         console.error("Failed to get pool info", error);
@@ -83,11 +97,11 @@ async function process(ctx: SuiAddressContext, poolState: PoolTokenState): Promi
     return poolState;
 }
 
-async function updatePoolTokenStates(ctx: SuiAddressContext) {
+async function createPoolSnapshots(ctx: SuiAddressContext) {
     const poolTokenStates = await ctx.store.list(PoolTokenState, []);
     const newPoolTokenStates = await Promise.all(
         poolTokenStates.map((poolTokenState) =>
-            process(ctx, poolTokenState)
+            createPoolTokenSnapshot(ctx, poolTokenState)
         )
     );
     await ctx.store.upsert(newPoolTokenStates);
@@ -210,20 +224,12 @@ const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) 
             poolInfo.current_tick = after_sqrt_price.asBigDecimal();
             await ctx.store.upsert(poolInfo);
         } catch (error) {
-            console.error(`Failed to update PoolFee for ${pool}`, error);
+            console.error(`Failed to update current tick for ${pool}`, error);
         }
 
         // update the token balances in the pool state
-        const token = atob ? poolInfo.token_0 : poolInfo.token_1;
-        try {
-            let poolState = await helper.getOrCreatePoolTokenState(ctx, pool, token);
-            poolState.volume_amount = poolState.volume_amount.plus(atob ? amount0 : amount1);
-            poolState.volume_usd = poolState.volume_usd.plus(atob ? amount0.multipliedBy(price0) : amount1.multipliedBy(price1));
-
-            await ctx.store.upsert(poolState);
-        } catch (error) {
-            console.error(`Failed to update PoolTokenState for ${pool}-${token}`, event, error);
-        }
+        await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, rawAmount0, atob ? "add" : "remove");
+        await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, rawAmount1, atob ? "remove" : "add");
     } else {
         console.log("Pool info not found", pool);
     }
@@ -268,8 +274,12 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
         amount_liq: liquidity,
     });
 
-    // create UserState for this
+    // update user position
     await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "add", pool, amount_a, amount_b, tick_lower, tick_upper, liquidity);
+
+    // update pool token state
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "add");
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "add");
 };
 
 
@@ -313,6 +323,10 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
 
     // create UserState for this
     await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "remove", pool, amount_a, amount_b, tick_lower, tick_upper, liquidity);
+
+    // update pool token state
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "remove");
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "remove");
 };
 
 /***************************************************
@@ -324,9 +338,13 @@ const feeChangeEventHandler = async (event: pool.UpdateFeeRateEventInstance, ctx
         old_fee_rate,
         new_fee_rate,
     } = event.data_decoded;
-    let poolFee = await helper.getOrCreatePoolInfo(ctx, pool);
-    poolFee.fee_rate = new_fee_rate.asBigDecimal();
-    await ctx.store.upsert(poolFee);
+    try {
+        let poolFee = await helper.getOrCreatePoolInfo(ctx, pool);
+        poolFee.fee_rate = new_fee_rate.asBigDecimal();
+        await ctx.store.upsert(poolFee);
+    } catch (error) {
+        console.error("Failed to update fee rate", error);
+    }
 };
 
 
@@ -414,9 +432,10 @@ PROTOCOLS.forEach((protocol) => {
         network: protocol.network,
         startCheckpoint: protocol.checkpoiont,
     }).onTimeInterval(async (_, ctx) => {
-        await updatePoolTokenStates(ctx);
+        console.log("Processing Snapshot");
+        await createPoolSnapshots(ctx);
         await createUserScoreSnapshots(ctx);
-    }, 24 * 60);
+    }, 24 * 60, 24 * 60);
 
     factory.bind({
         address: protocol.address,

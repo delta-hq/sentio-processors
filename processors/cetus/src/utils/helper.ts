@@ -23,8 +23,6 @@ export function getCoinFullAddress(type: string) {
         coin_b_address = matches_b[0].slice(0, -1)
     }
     return [coin_a_address, coin_b_address]
-
-    return ["", ""]
 }
 
 export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
@@ -147,6 +145,25 @@ export const getOrCreatePoolTokenState = async (ctx: SuiContext | SuiObjectConte
     return poolTokenState;
 };
 
+export const updatePoolTokenState = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string, token: string, decimals: number, tokenAmount: bigint, eventType: string): Promise<void> => {
+    try {
+        const poolTokenState = await getOrCreatePoolTokenState(ctx, poolId, token);
+        const price = await getTokenPrice(ctx, token);
+
+        if (eventType === "add") {
+            poolTokenState.token_amount = poolTokenState.token_amount.plus(tokenAmount.asBigDecimal());
+            poolTokenState.token_amount_usd = poolTokenState.token_amount_usd.plus(tokenAmount.scaleDown(decimals).multipliedBy(price));
+        } else if (eventType === "remove") {
+            poolTokenState.token_amount = poolTokenState.token_amount.minus(tokenAmount.asBigDecimal());
+            poolTokenState.token_amount_usd = poolTokenState.token_amount_usd.minus(tokenAmount.scaleDown(decimals).multipliedBy(price));
+        }
+
+        await ctx.store.upsert(poolTokenState);
+    } catch (error) {
+        console.log("Error updating pool token state", error);
+    }
+};
+
 /***************************************************
             UserState handling functions 
 ***************************************************/
@@ -174,7 +191,6 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         const userState = await getOrCreateUserState(ctx, user);
 
         // check if there is a position for this user in that pool in that range
-        // const userPositionId = `${positionId}_${poolId}_${user}_${lowerTick}_${upperTick}`;
         const userPositionId = `${positionId}_${user}`;
         let userPosition = await ctx.store.get(UserPosition, userPositionId);
 
@@ -196,12 +212,12 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         if (eventType === "add") {
             userPosition.amount_0 = userPosition.amount_0.plus(amount0.asBigDecimal());
             userPosition.amount_1 = userPosition.amount_1.plus(amount1.asBigDecimal())
-            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.asBigDecimal().multipliedBy(price0)).plus(amount1.asBigDecimal().multipliedBy(price1));
+            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.asBigDecimal().multipliedBy(price0).plus(amount1.asBigDecimal().multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.plus(liquidity.asBigDecimal())
         } else if (eventType === "remove") {
             userPosition.amount_0 = userPosition.amount_0.minus(amount0.asBigDecimal());
             userPosition.amount_1 = userPosition.amount_1.minus(amount1.asBigDecimal());
-            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.asBigDecimal().multipliedBy(price0)).plus(amount1.asBigDecimal().multipliedBy(price1));
+            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.asBigDecimal().multipliedBy(price0).plus(amount1.asBigDecimal().multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.minus(liquidity.asBigDecimal());
         }
         userPosition.timestamp = BigInt(timestamp);
@@ -227,21 +243,26 @@ export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext
             Coin handler functions
 ***************************************************/
 export const getTokenPrice = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, token: string) => {
-    let price = await getPriceByType(
-        SuiChainId.SUI_MAINNET,
-        token,
-        ctx.timestamp
-    );
+    try {
+        let price = await getPriceByType(
+            SuiChainId.SUI_MAINNET,
+            token,
+            ctx.timestamp
+        );
 
-    const isStableCoin = (token: string) => {
-        const stableCoins = new Set(["0xce7ff77a83ea0cb6fd39bd8748e2ec89a3f41e8efdc3f4eb123e0ca37b184db2::buck::BUCK", "0x94e7a8e71830d2b34b3edaa195dc24c45d142584f06fa257b73af753d766e690::celer_usdt_coin::CELER_USDT_COIN", "0x94e7a8e71830d2b34b3edaa195dc24c45d142584f06fa257b73af753d766e690::celer_usdc_coin::CELER_USDC_COIN"])
-        return stableCoins.has(token)
-    }
+        const isStableCoin = (token: string) => {
+            const stableCoins = new Set(["0xce7ff77a83ea0cb6fd39bd8748e2ec89a3f41e8efdc3f4eb123e0ca37b184db2::buck::BUCK", "0x94e7a8e71830d2b34b3edaa195dc24c45d142584f06fa257b73af753d766e690::celer_usdt_coin::CELER_USDT_COIN", "0x94e7a8e71830d2b34b3edaa195dc24c45d142584f06fa257b73af753d766e690::celer_usdc_coin::CELER_USDC_COIN"])
+            return stableCoins.has(token)
+        }
 
-    if (!price || isStableCoin(token)) {
-        price = 1;
+        if (!price || isStableCoin(token)) {
+            price = 0; //use 0 for assets with no price
+        }
+        return price;
+    } catch (error) {
+        console.log("Error getting token price", error);
+        return 0;
     }
-    return price;
 };
 
 export const getCoinTypeFriendlyName = (coinType: string, metadataSymbol?: string) => {
