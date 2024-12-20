@@ -153,12 +153,12 @@ export class UserPosition extends AbstractEntity  {
 	amount_usd: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	lower_tick: BigInt
+	@Column("BigDecimal")
+	lower_tick: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	upper_tick: BigInt
+	@Column("BigDecimal")
+	upper_tick: BigDecimal
 
 	@Required
 	@Column("BigDecimal")
@@ -211,8 +211,8 @@ type UserPosition @entity {
   amount_0: BigDecimal!
   amount_1: BigDecimal!
   amount_usd: BigDecimal!
-  lower_tick: BigInt!
-  upper_tick: BigInt!
+  lower_tick: BigDecimal!
+  upper_tick: BigDecimal!
   liquidity: BigDecimal!
 }
 `

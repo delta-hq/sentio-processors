@@ -42,7 +42,7 @@ type UserPosition @entity {
   amount_0: BigDecimal!
   amount_1: BigDecimal!
   amount_usd: BigDecimal!
-  lower_tick: BigInt!
-  upper_tick: BigInt!
+  lower_tick: BigDecimal!
+  upper_tick: BigDecimal!
   liquidity: BigDecimal!
 }

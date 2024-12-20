@@ -4,6 +4,8 @@ import { getPriceByType } from "@sentio/sdk/utils";
 import { PoolInfo, PoolTokenState, UserState, UserPosition } from "../schema/store.js";
 import { BigDecimal } from "@sentio/sdk";
 import { i32 } from "../types/sui/0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57.js";
+import { TickMath } from "@cetusprotocol/cetus-sui-clmm-sdk";
+import { tick } from "../types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
 
 /***************************************************
             PoolInfo handling functions 
@@ -47,7 +49,8 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
 
             fee = (obj.data?.content.fields as any).fee_rate;
             tick_spacing = (obj.data?.content.fields as any).tick_spacing;
-            current_tick = (obj.data?.content.fields as any).current_tick_index.fields.bits;
+
+            current_tick = (obj.data?.content.fields as any).current_sqrt_price;
 
             decimals0 = metadataToken0.decimals;
             decimals1 = metadataToken1.decimals;
@@ -181,30 +184,32 @@ const getOrCreateUserState = async (ctx: SuiContext | SuiObjectContext | SuiAddr
 }
 
 
-export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolInfo: PoolInfo, positionId: string, user: string, timestamp: number, eventType: string, poolId: string, amount0: bigint, amount1: bigint, lowerTick: i32.I32, upperTick: i32.I32, liquidity: bigint): Promise<void> => {
+export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolInfo: PoolInfo,
+    positionId: string, user: string, timestamp: number, eventType: string, poolId: string,
+    amount0: bigint, amount1: bigint, lowerTick: BigDecimal, upperTick: BigDecimal, liquidity: bigint): Promise<void> => {
+
     try {
         // get token prices
         const price0 = await getTokenPrice(ctx, poolInfo.token_0);
-        const price1 = await getTokenPrice(ctx, poolInfo.token_0);
+        const price1 = await getTokenPrice(ctx, poolInfo.token_1);
 
-        // get or creat user state
+        // used to keep track of all the users
         const userState = await getOrCreateUserState(ctx, user);
 
         // check if there is a position for this user in that pool in that range
-        const userPositionId = `${positionId}_${user}`;
-        let userPosition = await ctx.store.get(UserPosition, userPositionId);
+        let userPosition = await ctx.store.get(UserPosition, positionId);
 
         if (!userPosition) {
             userPosition = new UserPosition({
-                id: userPositionId,
+                id: positionId,
                 user_address: user,
                 position_id: positionId,
                 pool_address: poolId,
                 amount_0: BigDecimal(0),
                 amount_1: BigDecimal(0),
                 amount_usd: BigDecimal(0),
-                lower_tick: BigInt(lowerTick.bits),
-                upper_tick: BigInt(upperTick.bits),
+                lower_tick: lowerTick,
+                upper_tick: upperTick,
                 liquidity: BigDecimal(0),
             });
         }
@@ -212,12 +217,12 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         if (eventType === "add") {
             userPosition.amount_0 = userPosition.amount_0.plus(amount0.asBigDecimal());
             userPosition.amount_1 = userPosition.amount_1.plus(amount1.asBigDecimal())
-            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.asBigDecimal().multipliedBy(price0).plus(amount1.asBigDecimal().multipliedBy(price1)));
+            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.plus(liquidity.asBigDecimal())
         } else if (eventType === "remove") {
             userPosition.amount_0 = userPosition.amount_0.minus(amount0.asBigDecimal());
             userPosition.amount_1 = userPosition.amount_1.minus(amount1.asBigDecimal());
-            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.asBigDecimal().multipliedBy(price0).plus(amount1.asBigDecimal().multipliedBy(price1)));
+            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.minus(liquidity.asBigDecimal());
         }
         userPosition.timestamp = BigInt(timestamp);
@@ -229,8 +234,7 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
 }
 
 export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, positionId: string, oldUser: string, newUser: string,): Promise<void> => {
-    const userPositionId = `${positionId}_${oldUser}`;
-    let userPosition = await ctx.store.get(UserPosition, userPositionId);
+    let userPosition = await ctx.store.get(UserPosition, positionId);
     console.log(`Updating user position owner from ${oldUser} to ${newUser}`);
     if (userPosition) {
         userPosition.user_address = newUser;
@@ -291,8 +295,22 @@ export const getCoinTypeFriendlyName = (coinType: string, metadataSymbol?: strin
     }
 }
 
+export const getTokenAddressFromAddres = (address: string): string => {
+    switch (address) {
+        case "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI":
+            return "0x2::sui::SUI";
+        default:
+            return address;
+    }
+};
+
 export const getPairFriendlyName = (token0: string, token1: string): string => {
     let name0 = getCoinTypeFriendlyName(token0);
     let name1 = getCoinTypeFriendlyName(token1);
     return `${name0}-${name1}`;
+}
+
+
+export const getSqrtPriceFromTickIndex = (tick: i32.I32): BigDecimal => {
+    return BigDecimal(TickMath.tickIndexToSqrtPriceX64(Number(tick.bits)).toString())
 }
