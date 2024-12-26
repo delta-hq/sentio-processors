@@ -310,7 +310,13 @@ export const getPairFriendlyName = (token0: string, token1: string): string => {
     return `${name0}-${name1}`;
 }
 
+const convertTick = (tick: number): number => {
+    if (tick > 2147483647) {
+        tick = (tick - 4294967296);
+    }
+    return tick;
+}
 
 export const getSqrtPriceFromTickIndex = (tick: i32.I32): BigDecimal => {
-    return BigDecimal(TickMath.tickIndexToSqrtPriceX64(Number(tick.bits)).toString())
+    return BigDecimal(TickMath.tickIndexToSqrtPriceX64(convertTick(tick.bits)).toString());
 }
