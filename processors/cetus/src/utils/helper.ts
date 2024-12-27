@@ -225,6 +225,12 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
             userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.minus(liquidity.asBigDecimal());
         }
+
+        // check negatives
+        userPosition.amount_0 = userPosition.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPosition.amount_0;
+        userPosition.amount_1 = userPosition.amount_1.lt(BigDecimal(0)) ? BigDecimal(0) : userPosition.amount_1;
+        userPosition.amount_usd = userPosition.amount_usd.lt(BigDecimal(0)) ? BigDecimal(0) : userPosition.amount_usd;
+
         userPosition.timestamp = BigInt(timestamp);
 
         await ctx.store.upsert(userPosition);

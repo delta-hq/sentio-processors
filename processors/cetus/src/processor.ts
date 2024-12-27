@@ -22,12 +22,12 @@ import { SuiGlobalProcessor, SuiNetwork, SuiObjectChangeContext, SuiObjectTypePr
 type ProtocolConfigType = {
     network: SuiChainId,
     address: string,
-    checkpoiont: bigint
+    checkpoint: bigint
 };
 const protocolConfig: ProtocolConfigType = {
     network: SuiChainId.SUI_MAINNET,
     address: "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
-    checkpoiont: 1500000n
+    checkpoint: 1500000n
 };
 const PROTOCOLS = new Set<ProtocolConfigType>(
     [protocolConfig]
@@ -74,8 +74,6 @@ async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTo
                 });
 
                 // reset the token amount and volume
-                poolState.token_amount = BigDecimal(0);
-                poolState.token_amount_usd = BigDecimal(0);
                 poolState.volume_amount = BigDecimal(0);
                 poolState.volume_usd = BigDecimal(0);
             }
@@ -139,7 +137,7 @@ const poolCreatedEventHandler = async (event: factory.CreatePoolEventInstance, c
             pool_address: pool_id,
             timestamp: ctx.timestamp.getTime(),
             lp_token_address: pool_id, // the lp token address is the same as the pool addresss
-            lp_token_symbol: "Kriya-V3-LP", // hardcoded for Kriya
+            lp_token_symbol: "Cetus-LP", // hardcoded for Kriya
             token_address: token1,
             token_symbol: poolInfo.symbol_1,
             token_decimals: poolInfo.decimals_1,
@@ -394,7 +392,19 @@ async function createUserScoreSnapshot(ctx: SuiAddressContext, userState: UserSt
 
             // TODO: Check the conversion for tick values
             if (poolInfo.current_tick.lte(position.upper_tick) && poolInfo.current_tick.gte(position.lower_tick)) {
-                scores.set(poolInfo.id.toString(), scores.get(poolInfo.id.toString()).plus(position.amount_usd));
+                // calculate the balance of the user based on current price, not historical
+                const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
+                const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
+
+                // get the curreent value
+                const currentValue = scores.get(poolInfo.id.toString());
+
+                // sum for each token
+                const TEN = new BigDecimal(10);
+                const amount0 = position.amount_0.dividedBy(TEN.pow(poolInfo.decimals_0)).multipliedBy(price0);
+                const amount1 = position.amount_1.dividedBy(TEN.pow(poolInfo.decimals_1)).multipliedBy(price1);
+
+                scores.set(poolInfo.id.toString(), currentValue.plus(amount0).plus(amount1));
             }
         }
 
@@ -429,7 +439,7 @@ PROTOCOLS.forEach((protocol) => {
     SuiAddressProcessor.bind({
         address: protocol.address,
         network: protocol.network,
-        startCheckpoint: protocol.checkpoiont,
+        startCheckpoint: protocol.checkpoint,
     }).onTimeInterval(async (_, ctx) => {
         await createPoolSnapshots(ctx);
         await createUserScoreSnapshots(ctx);
@@ -438,13 +448,13 @@ PROTOCOLS.forEach((protocol) => {
     factory.bind({
         address: protocol.address,
         network: protocol.network,
-        startCheckpoint: protocol.checkpoiont,
+        startCheckpoint: protocol.checkpoint,
     }).onEventCreatePoolEvent(poolCreatedEventHandler);
 
     pool.bind({
         address: protocol.address,
         network: protocol.network,
-        startCheckpoint: protocol.checkpoiont,
+        startCheckpoint: protocol.checkpoint,
     }).onEventAddLiquidityEvent(addLiquidityEventHandler)
         .onEventRemoveLiquidityEvent(removeLiquidityEventHandler)
         .onEventSwapEvent(swapEventHandler)
