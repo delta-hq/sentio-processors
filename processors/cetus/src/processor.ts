@@ -1,6 +1,6 @@
 import { SuiChainId } from "@sentio/chain";
 import { BigDecimal, BigInteger } from "@sentio/sdk";
-import { SuiAddressContext, SuiAddressProcessor, SuiContext } from "@sentio/sdk/sui";
+import { SuiAddressContext, SuiAddressProcessor, SuiContext, SuiObjectContext, TypedSuiMoveObject } from "@sentio/sdk/sui";
 import { } from "@sentio/sdk/utils";
 import {
     pool,
@@ -14,6 +14,7 @@ import { TypeDescriptor } from "@sentio/sdk/move";
 
 import { SuiObjectChange } from "@mysten/sui/client"
 import { SuiGlobalProcessor, SuiNetwork, SuiObjectChangeContext, SuiObjectTypeProcessor, SuiObjectProcessor } from "@sentio/sdk/sui"
+import { SuiMoveObject } from "@mysten/sui.js/client";
 
 
 /***************************************************
@@ -36,6 +37,67 @@ const PROTOCOLS = new Set<ProtocolConfigType>(
 /***************************************************
       Snapshot processing functions 
 ***************************************************/
+async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): Promise<void> {
+    // Add your processing logic here
+    try {
+        console.log("Snapshot for pool", poolObjDecoded);
+        const poolAddress = ctx.objectId;
+        try {
+            // get the pool info and fee
+            const poolInfo = await helper.getOrCreatePoolInfo(ctx, poolAddress);
+
+            console.log("Snapshot for pool with poolInfo", poolInfo);
+
+            const rawToken0 = poolObjDecoded.data_decoded.coin_a;
+            const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
+            const token0 = BigInt(rawToken0).scaleDown(poolInfo.decimals_0);
+
+            ctx.eventLogger.emit("PoolSnapshot", {
+                timestamp: ctx.timestamp,
+                pool_address: poolInfo.id.toString(),
+                token_address: poolInfo.token_0,
+                token_symbol: poolInfo.symbol_0,
+                token_amount: token0,
+                token_amount_usd: token0.multipliedBy(price0),
+                volume_amount: BigDecimal(0),//poolState.volume_amount,
+                volume_usd: BigDecimal(0), //poolState.volume_usd,
+                fee_rate: poolInfo.fee_rate,
+                total_fees_usd: BigDecimal(0),
+                user_fees_usd: BigDecimal(0),
+                protocol_fees_usd: BigDecimal(0),
+            });
+
+            const rawToken1 = poolObjDecoded.data_decoded.coin_b;
+            const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
+            const token1 = BigInt(rawToken1).scaleDown(poolInfo.decimals_1);
+
+            ctx.eventLogger.emit("PoolSnapshot", {
+                timestamp: ctx.timestamp,
+                pool_address: poolInfo.id.toString(),
+                token_address: poolInfo.token_1,
+                token_symbol: poolInfo.symbol_1,
+                token_amount: token1,
+                token_amount_usd: token1.multipliedBy(price1),
+                volume_amount: BigDecimal(0),//poolState.volume_amount,
+                volume_usd: BigDecimal(0), //poolState.volume_usd,
+                fee_rate: poolInfo.fee_rate,
+                total_fees_usd: BigDecimal(0),
+                user_fees_usd: BigDecimal(0),
+                protocol_fees_usd: BigDecimal(0),
+            });
+
+            // reset the token amount and volume
+            // poolState.volume_amount = BigDecimal(0);
+            // poolState.volume_usd = BigDecimal(0);
+        }
+        catch (error) {
+            console.error("Failed to create Snapshot", error);
+        }
+    } catch (error) {
+        console.error("Failed to get pool object details", error);
+    }
+}
+
 async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTokenState): Promise<PoolTokenState> {
     // Add your processing logic here
 
@@ -87,6 +149,8 @@ async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTo
 
     return poolState;
 }
+
+
 
 async function createPoolSnapshots(ctx: SuiAddressContext) {
     const poolTokenStates = await ctx.store.list(PoolTokenState, []);
@@ -441,7 +505,6 @@ PROTOCOLS.forEach((protocol) => {
         network: protocol.network,
         startCheckpoint: protocol.checkpoint,
     }).onTimeInterval(async (_, ctx) => {
-        await createPoolSnapshots(ctx);
         await createUserScoreSnapshots(ctx);
     }, 24 * 60, 24 * 60);
 
@@ -462,9 +525,20 @@ PROTOCOLS.forEach((protocol) => {
 });
 
 /***************************************************
-    Add event handlers for all pools
+    Add event handlers for transfers for all pools
 ***************************************************/
 SuiObjectTypeProcessor.bind({
     objectType: factory.Pools.type(),
-}).
-    onObjectChange(transferEventHandler);
+}).onObjectChange(transferEventHandler);
+
+/***************************************************
+    Add snapshot for all pools
+***************************************************/
+SuiObjectTypeProcessor.bind({
+    objectType: pool.Pool.type(),
+}).onTimeInterval(async (self, _, ctx) => {
+    if (!self) { return }
+    console.log(`Pool Snapshot: ctx ${ctx.objectId} at ctx.timestamp ${ctx.timestamp}`)
+    await createPoolSnapshot(self, ctx);
+}, 24 * 60, 24 * 60);
+
