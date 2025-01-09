@@ -266,7 +266,7 @@ export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext
 export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, poolInfo: PoolInfo, user: string, lowerTick: BigDecimal, upperTick: BigDecimal, liquidity: BigDecimal): Promise<void> => {
     try {
         let id = `${poolInfo.id}_${user}`;
-        let userPool = await ctx.store.get(UserPool, user);
+        let userPool = await ctx.store.get(UserPool, id);
         if (!userPool) {
             userPool = new UserPool({
                 id,
