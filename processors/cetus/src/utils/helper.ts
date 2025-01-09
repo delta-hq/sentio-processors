@@ -1,10 +1,11 @@
 import { SuiChainId } from "@sentio/chain";
 import { SuiAddressContext, SuiContext, SuiObjectChangeContext, SuiObjectContext } from "@sentio/sdk/sui";
 import { getPriceByType } from "@sentio/sdk/utils";
-import { PoolInfo, PoolTokenState, UserState, UserPosition } from "../schema/store.js";
+import { PoolInfo, PoolTokenState, UserState, UserPosition, UserPool } from "../schema/store.js";
 import { BigDecimal } from "@sentio/sdk";
+import BN from "bn.js";
 import { i32 } from "../types/sui/0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57.js";
-import { TickMath } from "@cetusprotocol/cetus-sui-clmm-sdk";
+import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
 import { tick } from "../types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
 
 /***************************************************
@@ -212,6 +213,16 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
                 upper_tick: upperTick,
                 liquidity: BigDecimal(0),
             });
+
+            // emit transfer event
+            ctx.eventLogger.emit("Transfer", {
+                timestamp: ctx.timestamp,
+                transaction_from_address: user.toString(),
+                nft_token_id: positionId,
+                from_address: "0x0000000000",
+                to_address: user.toString(),
+                event_type: "transfer",
+            });
         }
 
         if (eventType === "add") {
@@ -225,6 +236,9 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
             userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
             userPosition.liquidity = userPosition.liquidity.minus(liquidity.asBigDecimal());
         }
+
+        // update global user pool
+        // await updateUserPool(ctx, poolInfo, user, amount0, amount1, eventType, lowerTick, upperTick, liquidity);
 
         // check negatives
         userPosition.amount_0 = userPosition.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPosition.amount_0;
@@ -248,6 +262,58 @@ export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext
         console.log(`User position owner updated from ${oldUser} to ${newUser}`);
     }
 };
+
+export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, poolInfo: PoolInfo, user: string, lowerTick: BigDecimal, upperTick: BigDecimal, liquidity: BigDecimal): Promise<void> => {
+    try {
+        let id = `${poolInfo.id}_${user}`;
+        let userPool = await ctx.store.get(UserPool, user);
+        if (!userPool) {
+            userPool = new UserPool({
+                id,
+                user_address: user,
+                pool_address: poolInfo.id.toString(),
+                amount_0: BigDecimal(0),
+                amount_1: BigDecimal(0),
+                amount_0_in_range: BigDecimal(0),
+                amount_1_in_range: BigDecimal(0),
+            });
+        }
+
+        try {
+            const amounts = ClmmPoolUtil.getCoinAmountFromLiquidity(
+                new BN(liquidity.toString()),
+                new BN(poolInfo.current_tick.toString()),
+                new BN(lowerTick.toString()),
+                new BN(upperTick.toString()),
+                false
+            );
+            const { coinA, coinB } = amounts;
+
+            const amount0 = BigInt(coinA.toString()).asBigDecimal();
+            const amount1 = BigInt(coinB.toString()).asBigDecimal();
+
+            userPool.amount_0 = userPool.amount_0.plus(amount0);
+            userPool.amount_1 = userPool.amount_1.plus(amount1);
+
+            if (poolInfo.current_tick.lte(upperTick) && poolInfo.current_tick.gte(lowerTick)) {
+                userPool.amount_0_in_range = userPool.amount_0_in_range.plus(amount0);
+                userPool.amount_1_in_range = userPool.amount_1_in_range.plus(amount1);
+            }
+
+        } catch (error) {
+            console.log("Error getting token amounts from liquidity", error);
+        }
+
+        userPool.amount_0 = userPool.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0;
+        userPool.amount_1 = userPool.amount_1.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1;
+        userPool.amount_0_in_range = userPool.amount_0_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0_in_range;
+        userPool.amount_1_in_range = userPool.amount_1_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1_in_range;
+
+        await ctx.store.upsert(userPool);
+    } catch (error) {
+        console.log("Error creating user pool", error);
+    }
+}
 
 /***************************************************
             Coin handler functions
@@ -294,7 +360,7 @@ export const getCoinTypeFriendlyName = (coinType: string, metadataSymbol?: strin
         case "0x549e8b69270defbfafd4f94e17ec44cdbdd99820b33bda2278dea3b9a32d3f55::cert::CERT":
             return "vSUI"
         default:
-            if (!metadataSymbol) {
+            if (metadataSymbol) {
                 return metadataSymbol;
             }
             return coinType;
@@ -325,4 +391,35 @@ const convertTick = (tick: number): number => {
 
 export const getSqrtPriceFromTickIndex = (tick: i32.I32): BigDecimal => {
     return BigDecimal(TickMath.tickIndexToSqrtPriceX64(convertTick(tick.bits)).toString());
+}
+
+export const getObjectOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, id: string): Promise<string> => {
+    try {
+        ctx.client.tryGetPastObject
+        const obj = await ctx.client.getObject({
+            id,
+            options: {
+                showOwner: true,
+            },
+        });
+        if (!obj) {
+            console.log("No object found for id", id);
+            return "none";
+        }
+        if (obj.error) {
+            console.log("Error in object owner", obj.error);
+            return "none";
+        }
+        const owner =
+            (obj as any)?.data?.owner?.AddressOwner ??
+            (obj as any)?.data?.owner?.ObjectOwner;
+        if (!owner) {
+            console.log("No owner found for object", obj);
+        }
+        return owner;
+    }
+    catch (error) {
+        console.log("Error getting object owner", error);
+    }
+    return "none";
 }

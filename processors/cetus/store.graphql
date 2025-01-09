@@ -33,6 +33,16 @@ type UserState @entity {
   user: String!
 }
 
+type UserPool @entity {
+  id: ID! # user-position id
+  user_address: String!
+  pool_address: String!
+  amount_0: BigDecimal!
+  amount_1: BigDecimal!
+  amount_0_in_range: BigDecimal!
+  amount_1_in_range: BigDecimal!
+}
+
 type UserPosition @entity {
   id: ID! # position ID
   user_address: String!

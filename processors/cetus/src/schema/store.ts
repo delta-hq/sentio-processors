@@ -117,6 +117,39 @@ export class UserState extends AbstractEntity  {
   constructor(data: Partial<UserState>) {super()}
 }
 
+@Entity("UserPool")
+export class UserPool extends AbstractEntity  {
+
+	@Required
+	@Column("ID")
+	id: ID
+
+	@Required
+	@Column("String")
+	user_address: String
+
+	@Required
+	@Column("String")
+	pool_address: String
+
+	@Required
+	@Column("BigDecimal")
+	amount_0: BigDecimal
+
+	@Required
+	@Column("BigDecimal")
+	amount_1: BigDecimal
+
+	@Required
+	@Column("BigDecimal")
+	amount_0_in_range: BigDecimal
+
+	@Required
+	@Column("BigDecimal")
+	amount_1_in_range: BigDecimal
+  constructor(data: Partial<UserPool>) {super()}
+}
+
 @Entity("UserPosition")
 export class UserPosition extends AbstractEntity  {
 
@@ -202,6 +235,16 @@ type UserState @entity {
   user: String!
 }
 
+type UserPool @entity {
+  id: ID! # user-position id
+  user_address: String!
+  pool_address: String!
+  amount_0: BigDecimal!
+  amount_1: BigDecimal!
+  amount_0_in_range: BigDecimal!
+  amount_1_in_range: BigDecimal!
+}
+
 type UserPosition @entity {
   id: ID! # position ID
   user_address: String!
@@ -222,6 +265,7 @@ DatabaseSchema.register({
     "PoolTokenState": PoolTokenState,
 		"PoolInfo": PoolInfo,
 		"UserState": UserState,
+		"UserPool": UserPool,
 		"UserPosition": UserPosition
   }
 })

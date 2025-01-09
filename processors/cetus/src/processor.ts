@@ -1,6 +1,6 @@
 import { SuiChainId } from "@sentio/chain";
 import { BigDecimal, BigInteger } from "@sentio/sdk";
-import { SuiAddressContext, SuiAddressProcessor, SuiContext, SuiObjectContext, TypedSuiMoveObject } from "@sentio/sdk/sui";
+import { SuiAddressContext, SuiAddressProcessor, SuiContext, SuiObjectContext, TypedSuiMoveObject, SuiWrappedObjectProcessor } from "@sentio/sdk/sui";
 import { } from "@sentio/sdk/utils";
 import {
     pool,
@@ -9,7 +9,7 @@ import {
     config,
 } from "./types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
 import * as helper from "./utils/helper.js";
-import { PoolInfo, PoolTokenState, UserPosition, UserState } from "./schema/store.js";
+import { PoolInfo, PoolTokenState, UserPosition, UserState, UserPool } from "./schema/store.js";
 import { TypeDescriptor } from "@sentio/sdk/move";
 
 import { SuiObjectChange } from "@mysten/sui/client"
@@ -35,7 +35,7 @@ const PROTOCOLS = new Set<ProtocolConfigType>(
 )
 
 /***************************************************
-      Snapshot processing functions 
+      Pool snapshot processing functions 
 ***************************************************/
 async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): Promise<void> {
     // Add your processing logic here
@@ -149,19 +149,6 @@ async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTo
 
     return poolState;
 }
-
-
-
-async function createPoolSnapshots(ctx: SuiAddressContext) {
-    const poolTokenStates = await ctx.store.list(PoolTokenState, []);
-    const newPoolTokenStates = await Promise.all(
-        poolTokenStates.map((poolTokenState) =>
-            createPoolTokenSnapshot(ctx, poolTokenState)
-        )
-    );
-    await ctx.store.upsert(newPoolTokenStates);
-}
-
 
 /***************************************************
         Pool created event handler
@@ -303,7 +290,7 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
         amount_a,
         amount_b,
         liquidity,
-        after_liquidity
+        after_liquidity,
     } = event.data_decoded;
 
     console.log("Add Liquidity", event);
@@ -315,7 +302,7 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
     const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
 
     ctx.eventLogger.emit("LPMint", {
-        timestamp: ctx.timestamp.getTime(),
+        timestamp: ctx.timestamp,
         transaction_from_address: sender,
         event_address: "mint",
         pool_address: pool,
@@ -329,11 +316,11 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liq: liquidity,
+        amount_liq: after_liquidity,
     });
 
     // update user position
-    await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "add", pool, amount_a, amount_b, tickLower, tickUpper, liquidity);
+    await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "add", pool, amount_a, amount_b, tickLower, tickUpper, after_liquidity);
 
     // update pool token state
     await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "add");
@@ -365,7 +352,7 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
     const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
 
     ctx.eventLogger.emit("LPBurn", {
-        timestamp: ctx.timestamp.getTime(),
+        timestamp: ctx.timestamp,
         transaction_from_address: sender,
         event_address: "burn",
         pool_address: pool,
@@ -379,11 +366,11 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liq: liquidity,
+        amount_liq: after_liquidity,
     });
 
     // create UserState for this
-    await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "remove", pool, amount_a, amount_b, tickLower, tickUpper, liquidity);
+    await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "remove", pool, amount_a, amount_b, tickLower, tickUpper, after_liquidity);
 
     // update pool token state
     await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "remove");
@@ -433,7 +420,7 @@ const transferEventHandler = async (changes: SuiObjectChange[], ctx: SuiObjectCh
 };
 
 /***************************************************
-            User score snapshot
+            User snapshot processing functions
 ***************************************************/
 async function createUserScoreSnapshot(ctx: SuiAddressContext, userState: UserState) {
     try {
@@ -487,13 +474,109 @@ async function createUserScoreSnapshot(ctx: SuiAddressContext, userState: UserSt
         console.error("Failed to get user positions", error);
     }
 }
-async function createUserScoreSnapshots(ctx: SuiAddressContext) {
-    const userStates = await ctx.store.list(UserState, []);
-    console.log("User states", userStates);
+
+async function updateUserPoolData(ctx: SuiAddressContext, userPosition: UserPosition) {
+    try {
+        console.log("User position", userPosition);
+
+        const poolInfo = await helper.getOrCreatePoolInfo(ctx, userPosition.pool_address);
+
+        await helper.updateUserPool(ctx, poolInfo, userPosition.user_address, userPosition.lower_tick, userPosition.upper_tick, userPosition.liquidity);
+    } catch (error) {
+        console.error("Failed to get user positions", error);
+    }
+}
+
+async function createUserSnapthots(ctx: SuiAddressContext) {
+    const results = await ctx.store.list(UserPosition, []);
+
+    console.log("User positions", results);
     // process each user state
-    await Promise.all([...userStates.map(async (userState) => {
-        await createUserScoreSnapshot(ctx, userState)
+    await Promise.all([...results.map(async (result) => {
+        await updateUserPoolData(ctx, result);
     })]);
+
+    // process for each user-ppol pair
+    const users = await ctx.store.list(UserPool, []);
+    await Promise.all([...users.map(async (user) => {
+        await createUserSnapshot(ctx, user);
+    })]);
+
+    // clear each user-ppol pair
+    await ctx.store.delete(UserPool, users.map((user) => user.id.toString()));
+}
+
+
+/***************************************************
+    LP  Snapshot processing functions 
+***************************************************/
+async function createUserSnapshot(ctx: SuiAddressContext, userPool: UserPool) {
+    try {
+        console.log("User pool", userPool);
+
+        // get pool info
+        const poolInfo = await helper.getOrCreatePoolInfo(ctx, userPool.pool_address);
+
+        // ger price info
+        const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
+        const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
+
+        // get decimal normalized values
+        const TEN = new BigDecimal(10);
+        const amount0 = userPool.amount_0.dividedBy(TEN.pow(poolInfo.decimals_0));
+        const amount1 = userPool.amount_1.dividedBy(TEN.pow(poolInfo.decimals_1));
+        const amount0InRange = userPool.amount_0_in_range.dividedBy(TEN.pow(poolInfo.decimals_0));
+        const amount1InRange = userPool.amount_1_in_range.dividedBy(TEN.pow(poolInfo.decimals_1));
+
+        // calculate the usd denominated values
+        const amountUsd0 = amount0.multipliedBy(price0);
+        const amountUsd1 = amount1.multipliedBy(price1);
+        const amountUsd0InRange = amount0InRange.multipliedBy(price0);
+        const amountUsd1InRange = amount1InRange.multipliedBy(price1);
+
+        // create an event for the pool and the token0
+        ctx.eventLogger.emit("LPSnapshot", {
+            timestamp: ctx.timestamp,
+            pool_address: userPool.pool_address,
+            user_address: userPool.user_address,
+            token_index: 0,
+            token_address: poolInfo.token_0,
+            token_symbol: poolInfo.symbol_0,
+            token_amount: amount0,
+            token_amount_usd: amountUsd0,
+        });
+
+        // create an event for the pool and the token1
+        ctx.eventLogger.emit("LPSnapshot", {
+            timestamp: ctx.timestamp,
+            pool_address: userPool.pool_address,
+            user_address: userPool.user_address,
+            token_index: 1,
+            token_address: poolInfo.token_1,
+            token_symbol: poolInfo.symbol_1,
+            token_amount: amount1,
+            token_amount_usd: amountUsd1,
+        });
+
+
+        // emit the events for each user - pool pair
+        ctx.eventLogger.emit("UserScoreSnapshot", {
+            timestamp: ctx.timestamp,
+            user_address: userPool.user_address,
+            pool_address: userPool.pool_address,
+            total_value_locked_score: amountUsd0InRange.plus(amountUsd1InRange),
+            market_depth_score: 0,
+        });
+
+        // reset user-pool pair
+        userPool.amount_0 = BigDecimal(0);
+        userPool.amount_1 = BigDecimal(0);
+        userPool.amount_0_in_range = BigDecimal(0);
+        userPool.amount_1_in_range = BigDecimal(0);
+        await ctx.store.upsert(userPool);
+    } catch (error) {
+        console.error("Failed to get user pool ", error);
+    }
 }
 
 /***************************************************
@@ -505,7 +588,7 @@ PROTOCOLS.forEach((protocol) => {
         network: protocol.network,
         startCheckpoint: protocol.checkpoint,
     }).onTimeInterval(async (_, ctx) => {
-        await createUserScoreSnapshots(ctx);
+        await createUserSnapthots(ctx);
     }, 24 * 60, 24 * 60);
 
     factory.bind({
@@ -541,4 +624,3 @@ SuiObjectTypeProcessor.bind({
     console.log(`Pool Snapshot: ctx ${ctx.objectId} at ctx.timestamp ${ctx.timestamp}`)
     await createPoolSnapshot(self, ctx);
 }, 24 * 60, 24 * 60);
-
