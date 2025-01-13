@@ -6,7 +6,7 @@ import { BigDecimal } from "@sentio/sdk";
 import BN from "bn.js";
 import { i32 } from "../types/sui/0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57.js";
 import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
-import { tick } from "../types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
+import { pool, tick } from "../types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
 
 /***************************************************
             PoolInfo handling functions 
@@ -281,14 +281,13 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
 
         try {
             const amounts = ClmmPoolUtil.getCoinAmountFromLiquidity(
-                new BN(liquidity.toString()),
-                new BN(poolInfo.current_tick.toString()),
-                new BN(lowerTick.toString()),
-                new BN(upperTick.toString()),
+                new BN(liquidity.toFixed(0)),
+                new BN(poolInfo.current_tick.toFixed(0)),
+                new BN(lowerTick.toFixed(0)),
+                new BN(upperTick.toFixed(0)),
                 false
             );
             const { coinA, coinB } = amounts;
-
             const amount0 = BigInt(coinA.toString()).asBigDecimal();
             const amount1 = BigInt(coinB.toString()).asBigDecimal();
 
@@ -301,7 +300,7 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
             }
 
         } catch (error) {
-            console.log("Error getting token amounts from liquidity", error);
+            console.log(`Error getting token amounts from liquidity ${user}`, error);
         }
 
         userPool.amount_0 = userPool.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0;

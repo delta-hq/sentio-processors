@@ -28,7 +28,7 @@ type ProtocolConfigType = {
 const protocolConfig: ProtocolConfigType = {
     network: SuiChainId.SUI_MAINNET,
     address: "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
-    checkpoint: 1500000n
+    checkpoint: 1500000n //98392410n 1500000n
 };
 const PROTOCOLS = new Set<ProtocolConfigType>(
     [protocolConfig]
@@ -59,8 +59,8 @@ async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): P
                 token_symbol: poolInfo.symbol_0,
                 token_amount: token0,
                 token_amount_usd: token0.multipliedBy(price0),
-                volume_amount: BigDecimal(0),//poolState.volume_amount,
-                volume_usd: BigDecimal(0), //poolState.volume_usd,
+                volume_amount: BigDecimal(0),
+                volume_usd: BigDecimal(0),
                 fee_rate: poolInfo.fee_rate,
                 total_fees_usd: BigDecimal(0),
                 user_fees_usd: BigDecimal(0),
@@ -78,17 +78,13 @@ async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): P
                 token_symbol: poolInfo.symbol_1,
                 token_amount: token1,
                 token_amount_usd: token1.multipliedBy(price1),
-                volume_amount: BigDecimal(0),//poolState.volume_amount,
-                volume_usd: BigDecimal(0), //poolState.volume_usd,
+                volume_amount: BigDecimal(0),
+                volume_usd: BigDecimal(0),
                 fee_rate: poolInfo.fee_rate,
                 total_fees_usd: BigDecimal(0),
                 user_fees_usd: BigDecimal(0),
                 protocol_fees_usd: BigDecimal(0),
             });
-
-            // reset the token amount and volume
-            // poolState.volume_amount = BigDecimal(0);
-            // poolState.volume_usd = BigDecimal(0);
         }
         catch (error) {
             console.error("Failed to create Snapshot", error);
@@ -316,7 +312,7 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liq: after_liquidity,
+        amount_liquidity: after_liquidity,
     });
 
     // update user position
@@ -366,7 +362,7 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liq: after_liquidity,
+        amount_liquidity: after_liquidity,
     });
 
     // create UserState for this
