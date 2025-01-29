@@ -8,6 +8,9 @@ import { i32 } from "../types/sui/0x25929e7f29e0a30eb4e692952ba1b5b65a3a4d65ab5f
 // import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
 import { pool, tick } from "../types/sui/0x25929e7f29e0a30eb4e692952ba1b5b65a3a4d65ab5f2a32e1ba3edcb587f26d.js";
 
+// map for caching the pools
+const poolInfoMap: Map<string, PoolInfo> = new Map();
+
 /***************************************************
             PoolInfo handling functions 
 ***************************************************/
@@ -48,10 +51,10 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
             const metadataToken0 = await ctx.client.getCoinMetadata({ coinType: token0 });
             const metadataToken1 = await ctx.client.getCoinMetadata({ coinType: token1 });
 
-            fee = (obj.data?.content.fields as any).fee_rate;
+            fee = (obj.data?.content.fields as any).swap_fee_rate;
             tick_spacing = (obj.data?.content.fields as any).tick_spacing;
 
-            current_tick = (obj.data?.content.fields as any).current_sqrt_price;
+            current_tick = (obj.data?.content.fields as any).sqrt_price;
 
             decimals0 = metadataToken0.decimals;
             decimals1 = metadataToken1.decimals;
@@ -81,10 +84,13 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
 }
 
 export const getOrCreatePoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
-    let poolInfo = await ctx.store.get(PoolInfo, poolId);
+    let poolInfo = poolInfoMap.get(poolId);
+    if (!poolInfo)
+        poolInfo = await ctx.store.get(PoolInfo, poolId);
     if (!poolInfo) {
         console.log(`Pool info not found in store, building pool info for ${poolId}`);
         poolInfo = await buildPoolInfo(ctx, poolId);
+        poolInfoMap.set(poolId, poolInfo);
         await ctx.store.upsert(poolInfo);
     }
     return poolInfo;

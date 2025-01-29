@@ -18,6 +18,8 @@ type PoolTokenState @entity {
 type PoolInfo @entity {
   id: ID!
   fee_rate: BigDecimal
+  fee_rate_x: BigDecimal
+  fee_rate_y: BigDecimal
   current_tick: BigDecimal
   tick_spacing: BigDecimal
   symbol_0: String

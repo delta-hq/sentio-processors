@@ -90,6 +90,8 @@ export class PoolTokenState extends AbstractEntity  {
 interface PoolInfoConstructorInput {
   id: ID;
   fee_rate?: BigDecimal;
+  fee_rate_x?: BigDecimal;
+  fee_rate_y?: BigDecimal;
   current_tick?: BigDecimal;
   tick_spacing?: BigDecimal;
   symbol_0?: String;
@@ -108,6 +110,12 @@ export class PoolInfo extends AbstractEntity  {
 
 	@Column("BigDecimal")
 	fee_rate?: BigDecimal
+
+	@Column("BigDecimal")
+	fee_rate_x?: BigDecimal
+
+	@Column("BigDecimal")
+	fee_rate_y?: BigDecimal
 
 	@Column("BigDecimal")
 	current_tick?: BigDecimal
@@ -284,6 +292,8 @@ const source = `type PoolTokenState @entity {
 type PoolInfo @entity {
   id: ID!
   fee_rate: BigDecimal
+  fee_rate_x: BigDecimal
+  fee_rate_y: BigDecimal
   current_tick: BigDecimal
   tick_spacing: BigDecimal
   symbol_0: String

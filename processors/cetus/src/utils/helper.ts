@@ -8,6 +8,9 @@ import { i32 } from "../types/sui/0x714a63a0dba6da4f017b42d5d0fb78867f18bcde9048
 import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
 import { pool, tick } from "../types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
 
+// map for caching the pools
+const poolInfoMap: Map<string, PoolInfo> = new Map();
+
 /***************************************************
             PoolInfo handling functions 
 ***************************************************/
@@ -81,10 +84,13 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
 }
 
 export const getOrCreatePoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
+    // let poolInfo = poolInfoMap.get(poolId);
+    // if (!poolInfo)
     let poolInfo = await ctx.store.get(PoolInfo, poolId);
     if (!poolInfo) {
         console.log(`Pool info not found in store, building pool info for ${poolId}`);
         poolInfo = await buildPoolInfo(ctx, poolId);
+        poolInfoMap.set(poolId, poolInfo);
         await ctx.store.upsert(poolInfo);
     }
     return poolInfo;
@@ -195,13 +201,15 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         const price1 = await getTokenPrice(ctx, poolInfo.token_1);
 
         // used to keep track of all the users
-        const userState = await getOrCreateUserState(ctx, user);
+        // const userState = await getOrCreateUserState(ctx, user);
 
         // check if there is a position for this user in that pool in that range
+        console.log(`Get or create UserPosition: ${positionId} ${user}`);
         let userPosition = await ctx.store.get(UserPosition, positionId);
 
         if (!userPosition) {
             userPosition = new UserPosition({
+                timestamp: BigInt(ctx.timestamp.getTime()),
                 id: positionId,
                 user_address: user,
                 position_id: positionId,
@@ -280,6 +288,10 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
         }
 
         try {
+            // console.log(`Process Getting token amounts from ${user} liquidity`, liquidity, liquidity.toFixed(0));
+            // console.log(`Process Getting token amounts from ${user} poolinf`, poolInfo.current_tick, poolInfo.current_tick.toFixed(0));
+            // console.log(`Process Getting token amounts from ${user} lowerTick`, lowerTick, lowerTick.toFixed(0));
+            // console.log(`Process Getting token amounts from ${user} upperTick`, upperTick, upperTick.toFixed(0));
             const amounts = ClmmPoolUtil.getCoinAmountFromLiquidity(
                 new BN(liquidity.toFixed(0)),
                 new BN(poolInfo.current_tick.toFixed(0)),
@@ -288,8 +300,10 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
                 false
             );
             const { coinA, coinB } = amounts;
+            // console.log(`Process Getting token amounts from ${user} coinA ${coinA} coinB ${coinB}`);
             const amount0 = BigInt(coinA.toString()).asBigDecimal();
             const amount1 = BigInt(coinB.toString()).asBigDecimal();
+            // console.log(`Process Getting token amounts from ${user} amount0 ${amount0} amount1 ${amount1}`);
 
             userPool.amount_0 = userPool.amount_0.plus(amount0);
             userPool.amount_1 = userPool.amount_1.plus(amount1);

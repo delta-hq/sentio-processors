@@ -234,6 +234,8 @@ const swapEventHandler = async (event: trade.SwapEventInstance, ctx: SuiContext)
             console.error(`Failed to update PoolTokenState for ${pool_id}-${token}`, event, error);
         }
     } else {
+        // calculates the pool volume
+        
         console.log("Pool info not found", pool_id);
     }
 };

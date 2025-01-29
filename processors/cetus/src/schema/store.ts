@@ -12,6 +12,23 @@ import { DatabaseSchema } from '@sentio/sdk'
 
 
 
+
+interface PoolTokenStateConstructorInput {
+  id: ID;
+  timestamp: BigInt;
+  pool_address: String;
+  token_index: Int;
+  token_address: String;
+  token_symbol: String;
+  token_amount: BigDecimal;
+  token_amount_usd?: BigDecimal;
+  volume_amount: BigDecimal;
+  volume_usd?: BigDecimal;
+  fee_rate: BigDecimal;
+  total_fees_usd?: BigDecimal;
+  user_fees_usd?: BigDecimal;
+  protocol_fees_usd?: BigDecimal;
+}
 @Entity("PoolTokenState")
 export class PoolTokenState extends AbstractEntity  {
 
@@ -65,9 +82,23 @@ export class PoolTokenState extends AbstractEntity  {
 
 	@Column("BigDecimal")
 	protocol_fees_usd?: BigDecimal
-  constructor(data: Partial<PoolTokenState>) {super()}
+  constructor(data: PoolTokenStateConstructorInput) {super()}
+  
 }
 
+
+interface PoolInfoConstructorInput {
+  id: ID;
+  fee_rate?: BigDecimal;
+  current_tick?: BigDecimal;
+  tick_spacing?: BigDecimal;
+  symbol_0?: String;
+  symbol_1?: String;
+  decimals_0?: Int;
+  decimals_1?: Int;
+  token_0?: String;
+  token_1?: String;
+}
 @Entity("PoolInfo")
 export class PoolInfo extends AbstractEntity  {
 
@@ -101,9 +132,15 @@ export class PoolInfo extends AbstractEntity  {
 
 	@Column("String")
 	token_1?: String
-  constructor(data: Partial<PoolInfo>) {super()}
+  constructor(data: PoolInfoConstructorInput) {super()}
+  
 }
 
+
+interface UserStateConstructorInput {
+  id: ID;
+  user: String;
+}
 @Entity("UserState")
 export class UserState extends AbstractEntity  {
 
@@ -114,9 +151,20 @@ export class UserState extends AbstractEntity  {
 	@Required
 	@Column("String")
 	user: String
-  constructor(data: Partial<UserState>) {super()}
+  constructor(data: UserStateConstructorInput) {super()}
+  
 }
 
+
+interface UserPoolConstructorInput {
+  id: ID;
+  user_address: String;
+  pool_address: String;
+  amount_0: BigDecimal;
+  amount_1: BigDecimal;
+  amount_0_in_range: BigDecimal;
+  amount_1_in_range: BigDecimal;
+}
 @Entity("UserPool")
 export class UserPool extends AbstractEntity  {
 
@@ -147,9 +195,24 @@ export class UserPool extends AbstractEntity  {
 	@Required
 	@Column("BigDecimal")
 	amount_1_in_range: BigDecimal
-  constructor(data: Partial<UserPool>) {super()}
+  constructor(data: UserPoolConstructorInput) {super()}
+  
 }
 
+
+interface UserPositionConstructorInput {
+  id: ID;
+  user_address: String;
+  position_id: String;
+  pool_address: String;
+  timestamp: BigInt;
+  amount_0: BigDecimal;
+  amount_1: BigDecimal;
+  amount_usd: BigDecimal;
+  lower_tick: BigDecimal;
+  upper_tick: BigDecimal;
+  liquidity: BigDecimal;
+}
 @Entity("UserPosition")
 export class UserPosition extends AbstractEntity  {
 
@@ -196,7 +259,8 @@ export class UserPosition extends AbstractEntity  {
 	@Required
 	@Column("BigDecimal")
 	liquidity: BigDecimal
-  constructor(data: Partial<UserPosition>) {super()}
+  constructor(data: UserPositionConstructorInput) {super()}
+  
 }
 
 

@@ -378,20 +378,21 @@ const removeLiquidityEventHandler = async (event: pool.ModifyLiquidityInstance, 
 /***************************************************
             Fee change event handler
 ***************************************************/
-// const feeChangeEventHandler = async (event: pool.UpdateFeeRateEventInstance, ctx: SuiContext) => {
-//     const {
-//         pool,
-//         old_fee_rate,
-//         new_fee_rate,
-//     } = event.data_decoded;
-//     try {
-//         let poolFee = await helper.getOrCreatePoolInfo(ctx, pool);
-//         poolFee.fee_rate = new_fee_rate.asBigDecimal();
-//         await ctx.store.upsert(poolFee);
-//     } catch (error) {
-//         console.error("Failed to update fee rate", error);
-//     }
-// };
+const feeChangeEventHandler = async (event: pool.SetProtocolFeeRateInstance, ctx: SuiContext) => {
+    const {
+        pool_id,
+        protocol_fee_rate_x_new,
+        protocol_fee_rate_y_new,
+    } = event.data_decoded;
+    try {
+        let poolFee = await helper.getOrCreatePoolInfo(ctx, pool_id);
+        poolFee.fee_rate_x = protocol_fee_rate_x_new.asBigDecimal();
+        poolFee.fee_rate_y = protocol_fee_rate_x_new.asBigDecimal();
+        await ctx.store.upsert(poolFee);
+    } catch (error) {
+        console.error("Failed to update fee rate", error);
+    }
+};
 
 
 /***************************************************
@@ -528,13 +529,13 @@ async function createUserSnapshot(ctx: SuiAddressContext, userPool: UserPool) {
     Add event handlers for each chain-address pair
 ***************************************************/
 PROTOCOLS.forEach((protocol) => {
-    // SuiAddressProcessor.bind({
-    //     address: protocol.address,
-    //     network: protocol.network,
-    //     startCheckpoint: protocol.checkpoint,
-    // }).onTimeInterval(async (_, ctx) => {
-    //     await createUserSnapthots(ctx);
-    // }, 24 * 60, 24 * 60);
+    SuiAddressProcessor.bind({
+        address: protocol.address,
+        network: protocol.network,
+        startCheckpoint: protocol.checkpoint,
+    }).onTimeInterval(async (_, ctx) => {
+        await createUserSnapthots(ctx);
+    }, 24 * 60, 24 * 60);
 
     pool_manager.bind({
         address: protocol.address,
@@ -546,7 +547,8 @@ PROTOCOLS.forEach((protocol) => {
         address: protocol.address,
         network: protocol.network,
         startCheckpoint: protocol.checkpoint,
-    }).onEventSwap(swapEventHandler)
+    }).onEventSetProtocolFeeRate(feeChangeEventHandler)
+        .onEventSwap(swapEventHandler)
         .onEventModifyLiquidity(async (event: pool.ModifyLiquidityInstance, ctx: SuiContext) => {
             const deltaLiquidity = BigInt.asIntN(
                 128,
@@ -563,17 +565,17 @@ PROTOCOLS.forEach((protocol) => {
 /***************************************************
     Add event handlers for transfers for all pools
 ***************************************************/
-// SuiObjectTypeProcessor.bind({
-//     objectType: pool.Pool.type(),
-// }).onObjectChange(transferEventHandler);
+SuiObjectTypeProcessor.bind({
+    objectType: pool.Pool.type(),
+}).onObjectChange(transferEventHandler);
 
 /***************************************************
     Add snapshot for all pools
 ***************************************************/
-// SuiObjectTypeProcessor.bind({
-//     objectType: pool.Pool.type(),
-// }).onTimeInterval(async (self, _, ctx) => {
-//     if (!self) { return }
-//     console.log(`Pool Snapshot: ctx ${ctx.objectId} at ctx.timestamp ${ctx.timestamp}`)
-//     await createPoolSnapshot(self, ctx);
-// }, 24 * 60, 24 * 60);
+SuiObjectTypeProcessor.bind({
+    objectType: pool.Pool.type(),
+}).onTimeInterval(async (self, _, ctx) => {
+    if (!self) { return }
+    console.log(`Pool Snapshot: ctx ${ctx.objectId} at ctx.timestamp ${ctx.timestamp}`)
+    await createPoolSnapshot(self, ctx);
+}, 24 * 60, 24 * 60);

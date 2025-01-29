@@ -232,7 +232,7 @@ const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) 
     const amount1 = rawAmount1.scaleDown(poolInfo.decimals_1);
 
     // get sender
-    const sender = ctx.transaction.transaction?.data.sender;
+    const sender = event.sender; //ctx.transaction.transaction?.data.sender;
 
     if (poolInfo) {
 
@@ -292,7 +292,7 @@ const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, c
     console.log("Add Liquidity", event);
 
     const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool);
-    const sender = ctx.transaction.transaction?.data.sender;
+    const sender = event.sender;//ctx.transaction.transaction?.data.sender;
 
     const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower);
     const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
@@ -342,7 +342,7 @@ const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInsta
     console.log("Remove Liquidity", event);
 
     const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool);
-    const sender = ctx.transaction.transaction?.data.sender;
+    const sender = event.sender; //ctx.transaction.transaction?.data.sender;
 
     const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower);
     const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
@@ -416,59 +416,43 @@ const transferEventHandler = async (changes: SuiObjectChange[], ctx: SuiObjectCh
 };
 
 /***************************************************
-            User snapshot processing functions
+            LP and User snapshot processing functions
 ***************************************************/
-async function createUserScoreSnapshot(ctx: SuiAddressContext, userState: UserState) {
-    try {
-        const userPositions = await ctx.store.list(UserPosition, [
-            {
-                field: "user_address",
-                op: "=",
-                value: userState.user,
-            },
-        ]);
-        console.log("User positions", userPositions);
-        // process all positions of the user
-        let scores = new Map<string, BigDecimal>();
-
-        for (const position of userPositions) {
-            const poolInfo = await helper.getOrCreatePoolInfo(ctx, position.pool_address);
-            if (!scores.has(poolInfo.id.toString())) {
-                scores.set(poolInfo.id.toString(), BigDecimal(0));
-            }
-
-            // TODO: Check the conversion for tick values
-            if (poolInfo.current_tick.lte(position.upper_tick) && poolInfo.current_tick.gte(position.lower_tick)) {
-                // calculate the balance of the user based on current price, not historical
-                const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
-                const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
-
-                // get the curreent value
-                const currentValue = scores.get(poolInfo.id.toString());
-
-                // sum for each token
-                const TEN = new BigDecimal(10);
-                const amount0 = position.amount_0.dividedBy(TEN.pow(poolInfo.decimals_0)).multipliedBy(price0);
-                const amount1 = position.amount_1.dividedBy(TEN.pow(poolInfo.decimals_1)).multipliedBy(price1);
-
-                scores.set(poolInfo.id.toString(), currentValue.plus(amount0).plus(amount1));
-            }
-        }
-
-        // emit the events for each user - pool pair
-        scores.forEach(async (score, poolAddress) => {
-            ctx.eventLogger.emit("UserScoreSnapshot", {
-                timestamp: ctx.timestamp.getTime(),
-                user_address: userState.user,
-                pool_address: poolAddress,
-                total_value_locked_score: score,
-                market_depth_score: 0,
-            });
-        });
-
-    } catch (error) {
-        console.error("Failed to get user positions", error);
+function chunkArray(array: any[], size: number = 1000) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+        chunks.push(array.slice(i, i + size));
     }
+    return chunks;
+}
+
+async function createUserSnapthots(ctx: SuiAddressContext) {
+    const results = await ctx.store.list(UserPosition, []);
+    const size = 1000;
+
+    console.log("User positions", results);
+    for (const chunk of chunkArray(results)) {
+        await Promise.all(chunk.map(async (result) => {
+            await updateUserPoolData(ctx, result);
+        }));
+    }
+
+    // await Promise.all([...results.map(async (result) => {
+    //     await updateUserPoolData(ctx, result);
+    // })]);
+    // process for each user-ppol pair
+    const users = await ctx.store.list(UserPool, []);
+    for (const chunk of chunkArray(users)) {
+        await Promise.all(chunk.map(async (user) => {
+            await createUserSnapshot(ctx, user);
+        }));
+    }
+    // await Promise.all([...users.map(async (user) => {
+    //     await createUserSnapshot(ctx, user);
+    // })]);
+
+    // clear each user-ppol pair
+    await ctx.store.delete(UserPool, users.map((user) => user.id.toString()));
 }
 
 async function updateUserPoolData(ctx: SuiAddressContext, userPosition: UserPosition) {
@@ -483,29 +467,6 @@ async function updateUserPoolData(ctx: SuiAddressContext, userPosition: UserPosi
     }
 }
 
-async function createUserSnapthots(ctx: SuiAddressContext) {
-    const results = await ctx.store.list(UserPosition, []);
-
-    console.log("User positions", results);
-    // process each user state
-    await Promise.all([...results.map(async (result) => {
-        await updateUserPoolData(ctx, result);
-    })]);
-
-    // process for each user-ppol pair
-    const users = await ctx.store.list(UserPool, []);
-    await Promise.all([...users.map(async (user) => {
-        await createUserSnapshot(ctx, user);
-    })]);
-
-    // clear each user-ppol pair
-    await ctx.store.delete(UserPool, users.map((user) => user.id.toString()));
-}
-
-
-/***************************************************
-    LP  Snapshot processing functions 
-***************************************************/
 async function createUserSnapshot(ctx: SuiAddressContext, userPool: UserPool) {
     try {
         console.log("User pool", userPool);
