@@ -1,0 +1,60 @@
+type PoolTokenState @entity {
+  id: ID!
+  timestamp: BigInt!
+  pool_address: String!
+  token_index: Int!
+  token_address: String!
+  token_symbol: String!
+  token_amount: BigDecimal!
+  token_amount_usd: BigDecimal
+  volume_amount: BigDecimal!
+  volume_usd: BigDecimal
+  fee_rate: BigInt!
+  total_fees_usd: BigDecimal
+  user_fees_usd: BigDecimal
+  protocol_fees_usd: BigDecimal
+}
+
+type PoolInfo @entity {
+  id: ID!
+  fee_rate: BigInt
+  fee_rate_x: BigInt
+  fee_rate_y: BigInt
+  current_tick: BigInt
+  tick_spacing: BigInt
+  symbol_0: String
+  symbol_1: String
+  decimals_0: Int
+  decimals_1: Int
+  token_0: String
+  token_1: String
+}
+
+type UserState @entity {
+  id: ID!
+  user: String!
+}
+
+type UserPool @entity {
+  id: ID! # user-position id
+  user_address: String!
+  pool_address: String!
+  amount_0: BigInt!
+  amount_1: BigInt!
+  amount_0_in_range: BigInt!
+  amount_1_in_range: BigInt!
+}
+
+type UserPosition @entity {
+  id: ID! # position ID
+  user_address: String!
+  position_id: String!
+  pool_address: String!
+  timestamp: BigInt!
+  amount_0: BigInt!
+  amount_1: BigInt!
+  amount_usd: BigDecimal!
+  lower_tick: BigInt!
+  upper_tick: BigInt!
+  liquidity: BigInt!
+}
