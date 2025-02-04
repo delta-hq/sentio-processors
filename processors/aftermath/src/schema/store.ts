@@ -90,16 +90,12 @@ export class PoolTokenState extends AbstractEntity  {
 interface PoolInfoConstructorInput {
   id: ID;
   fee_rate?: BigInt;
-  fee_rate_x?: BigInt;
-  fee_rate_y?: BigInt;
-  current_tick?: BigInt;
-  tick_spacing?: BigInt;
-  symbol_0?: String;
-  symbol_1?: String;
-  decimals_0?: Int;
-  decimals_1?: Int;
-  token_0?: String;
-  token_1?: String;
+  name?: String;
+  decimals?: Array<Int>;
+  tokens?: Array<String>;
+  fees?: Array<BigInt>;
+  balances?: Array<BigInt>;
+  symbols?: Array<String>;
 }
 @Entity("PoolInfo")
 export class PoolInfo extends AbstractEntity  {
@@ -111,35 +107,23 @@ export class PoolInfo extends AbstractEntity  {
 	@Column("BigInt")
 	fee_rate?: BigInt
 
-	@Column("BigInt")
-	fee_rate_x?: BigInt
-
-	@Column("BigInt")
-	fee_rate_y?: BigInt
-
-	@Column("BigInt")
-	current_tick?: BigInt
-
-	@Column("BigInt")
-	tick_spacing?: BigInt
-
 	@Column("String")
-	symbol_0?: String
+	name?: String
 
-	@Column("String")
-	symbol_1?: String
+	@ListColumn("Int")
+	decimals?: Array<Int>
 
-	@Column("Int")
-	decimals_0?: Int
+	@ListColumn("String")
+	tokens?: Array<String>
 
-	@Column("Int")
-	decimals_1?: Int
+	@ListColumn("BigInt")
+	fees?: Array<BigInt>
 
-	@Column("String")
-	token_0?: String
+	@ListColumn("BigInt")
+	balances?: Array<BigInt>
 
-	@Column("String")
-	token_1?: String
+	@ListColumn("String")
+	symbols?: Array<String>
   constructor(data: PoolInfoConstructorInput) {super()}
   
 }
@@ -292,16 +276,12 @@ const source = `type PoolTokenState @entity {
 type PoolInfo @entity {
   id: ID!
   fee_rate: BigInt
-  fee_rate_x: BigInt
-  fee_rate_y: BigInt
-  current_tick: BigInt
-  tick_spacing: BigInt
-  symbol_0: String
-  symbol_1: String
-  decimals_0: Int
-  decimals_1: Int
-  token_0: String
-  token_1: String
+  name: String
+  decimals: [Int]
+  tokens: [String]
+  fees: [BigInt]
+  balances: [BigInt]
+  symbols: [String]
 }
 
 type UserState @entity {

@@ -4,9 +4,9 @@ import { getPriceByType } from "@sentio/sdk/utils";
 import { PoolInfo, PoolTokenState, UserState, UserPosition, UserPool } from "../schema/store.js";
 import { BigDecimal } from "@sentio/sdk";
 import BN from "bn.js";
-import { i32, liquidity_math } from "../types/sui/0x25929e7f29e0a30eb4e692952ba1b5b65a3a4d65ab5f2a32e1ba3edcb587f26d.js";
 import { ClmmPosition } from "@flowx-finance/sdk"
 import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
+// import { i32 } from "../types/sui/0xefe170ec0be4d762196bedecd7a065816576198a6527c99282a2551aaa7da38c.js";
 
 // map for caching the pools
 const poolInfoMap: Map<string, PoolInfo> = new Map();
@@ -15,24 +15,29 @@ const poolInfoMap: Map<string, PoolInfo> = new Map();
             PoolInfo handling functions 
 ***************************************************/
 export function getCoinFullAddress(type: string) {
-    let coin_a_address = ""
-    let coin_b_address = ""
+    let coin_a_address = "";
+    let coin_b_address = "";
 
     const regex_a = /<[^,]+,/g;
-    const regex_b = /0x[^\s>]+>/g;
-    const matches_a = type.match(regex_a)
-    const matches_b = type.match(regex_b)
+    const regex_b = /, [^\s>]+,/g;
+    const matches_a = type.match(regex_a);
+    const matches_b = type.match(regex_b);
     if (matches_a) {
-        coin_a_address = matches_a[0].slice(1, -1)
+        coin_a_address = matches_a[0].slice(1, -1);
     }
     if (matches_b) {
-        coin_b_address = matches_b[0].slice(0, -1)
+        coin_b_address = matches_b[0].slice(2, -1);
     }
-    return [coin_a_address, coin_b_address]
+    return [coin_a_address, coin_b_address];
 }
 
 export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
-    let [symbol0, symbol1, decimals0, decimals1, token0, token1, fee, current_tick, tick_spacing] = ["", "", 0, 0, "", "", 0, 0, 0];
+    let name = '';
+    let decimals: number[] = [];
+    let tokens: string[] = [];
+    let fees: bigint[] = [];
+    let balances: bigint[] = [];
+    let symbols: string[] = [];
 
     try {
         const obj = await ctx.client.getObject({
@@ -43,25 +48,16 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
             // token0 = `0x${(obj.data.content.fields as any).coin_type_b}`;
             // token1 = `0x${(obj.data.content.fields as any).coin_type_b}`;
 
-            let type = obj.data.type;
-            if (type) {
-                [token0, token1] = getCoinFullAddress(type)
+            const fields = (obj.data?.content.fields as any);
+            console.log("Pool info fields", fields);
+            name = fields.name;
+            tokens = fields.type_names;
+            decimals = fields.coin_decimals;
+
+            for (let token in tokens) {
+                const metadataToken = await ctx.client.getCoinMetadata({ coinType: token });
+                symbols.push(getCoinTypeFriendlyName(token, metadataToken.symbol));
             }
-
-            const metadataToken0 = await ctx.client.getCoinMetadata({ coinType: token0 });
-            const metadataToken1 = await ctx.client.getCoinMetadata({ coinType: token1 });
-
-            fee = (obj.data?.content.fields as any).swap_fee_rate;
-            tick_spacing = (obj.data?.content.fields as any).tick_spacing;
-
-            current_tick = (obj.data?.content.fields as any).sqrt_price;
-
-            decimals0 = metadataToken0.decimals;
-            decimals1 = metadataToken1.decimals;
-
-            symbol0 = getCoinTypeFriendlyName(token0, metadataToken0.symbol);
-            symbol1 = getCoinTypeFriendlyName(token1, metadataToken1.symbol);
-
         } else {
             console.log("No pool info", obj);
         }
@@ -70,15 +66,12 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
     }
     const poolInfo = new PoolInfo({
         id: poolId,
-        symbol_0: symbol0,
-        symbol_1: symbol1,
-        decimals_0: decimals0,
-        decimals_1: decimals1,
-        fee_rate: BigInt(fee),
-        current_tick: BigInt(current_tick),
-        tick_spacing: BigInt(tick_spacing),
-        token_0: token0,
-        token_1: token1
+        fee_rate: BigInt(0),
+        tokens: tokens,
+        fees: fees,
+        balances: balances,
+        symbols: symbols,
+        decimals: decimals,
     });
     return Promise.resolve(poolInfo);
 }
@@ -183,8 +176,8 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
 
     try {
         // get token prices
-        const price0 = await getTokenPrice(ctx, poolInfo.token_0);
-        const price1 = await getTokenPrice(ctx, poolInfo.token_1);
+        // const price0 = await getTokenPrice(ctx, poolInfo.token_0);
+        // const price1 = await getTokenPrice(ctx, poolInfo.token_1);
 
         // check if there is a position for this user in that pool in that range
         let userPosition = await ctx.store.get(UserPosition, positionId);
@@ -218,11 +211,12 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
         if (eventType === "add") {
             userPosition.amount_0 = userPosition.amount_0 + amount0;
             userPosition.amount_1 = userPosition.amount_1 + amount1;
-            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+            // userPosition.amount_usd = userPosition.amount_usd.plus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
         } else if (eventType === "remove") {
             userPosition.amount_0 = userPosition.amount_0 - amount0;
             userPosition.amount_1 = userPosition.amount_1 - amount1;
-            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+            // userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+
         }
         //  add the liquidty, since it's a delta and has a sign
         userPosition.liquidity = userPosition.liquidity + liquidity;
@@ -265,39 +259,12 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
 
         try {
             console.log(`Process Getting token amounts from ${user} liquidity`, liquidity, liquidity.toString());
-            console.log(`Process Getting token amounts from ${user} poolinf`, poolInfo.current_tick, poolInfo.current_tick.toString());
             console.log(`Process Getting token amounts from ${user} lowerTick`, lowerTick, lowerTick.toString());
             console.log(`Process Getting token amounts from ${user} upperTick`, upperTick, upperTick.toString());
-            const amounts = ClmmPoolUtil.getCoinAmountFromLiquidity(
-                new BN(liquidity.toString()),
-                new BN(poolInfo.current_tick.toString()),
-                new BN(lowerTick.toString()),
-                new BN(upperTick.toString()),
-                false
-            );
-            const { coinA, coinB } = amounts;
-            console.log(`Process Getting token amounts from ${user} coinA ${coinA} coinB ${coinB}`);
-            const amount0 = BigInt(coinA.toString());//BigInt(coinA.toString()).asBigDecimal();
-            const amount1 = BigInt(coinB.toString());
-            console.log(`Process Getting token amounts from ${user} amount0 ${amount0} amount1 ${amount1}`);
-
-            userPool.amount_0 = userPool.amount_0 + amount0;
-            userPool.amount_1 = userPool.amount_1 + amount1;
-
-            if (poolInfo.current_tick >= lowerTick && poolInfo.current_tick <= upperTick) {
-                userPool.amount_0_in_range = userPool.amount_0_in_range + amount0;
-                userPool.amount_1_in_range = userPool.amount_1_in_range + amount1;
-            }
 
         } catch (error) {
             console.log(`Error getting token amounts from liquidity ${user}`, error);
         }
-
-        // userPool.amount_0 = userPool.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0;
-        // userPool.amount_1 = userPool.amount_1.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1;
-        // userPool.amount_0_in_range = userPool.amount_0_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0_in_range;
-        // userPool.amount_1_in_range = userPool.amount_1_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1_in_range;
-
         await ctx.store.upsert(userPool);
     } catch (error) {
         console.log("Error creating user pool", error);
@@ -371,21 +338,16 @@ export const getPairFriendlyName = (token0: string, token1: string): string => {
     return `${name0}-${name1}`;
 }
 
-export const convertTick = (tick: number): number => {
+const convertTick = (tick: number): number => {
     if (tick > 2147483647) {
         tick = (tick - 4294967296);
     }
     return tick;
 }
 
-export const getSqrtPriceFromTickIndex = (tick: i32.I32): bigint => {
-    const tickConverted = BigInt.asIntN(
-        32,
-        BigInt(tick.bits)
-    );
-    return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tick.bits)).toString());
-    // return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tickConverted)).toString());
-}
+// export const getSqrtPriceFromTickIndex = (tick: i32.I32): bigint => {
+//     return BigInt(TickMath.tickIndexToSqrtPriceX64(convertTick(tick.bits)).toString());
+// }
 
 export const getObjectOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, id: string): Promise<string> => {
     try {

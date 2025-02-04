@@ -1,20 +1,17 @@
 import { SuiChainId } from "@sentio/chain";
 import { BigDecimal, BigInteger } from "@sentio/sdk";
-import { SuiAddressContext, SuiAddressProcessor, SuiContext, SuiObjectContext, TypedSuiMoveObject, SuiWrappedObjectProcessor } from "@sentio/sdk/sui";
-import { } from "@sentio/sdk/utils";
+import { SuiAddressContext, SuiAddressProcessor, SuiContext, SuiObjectContext } from "@sentio/sdk/sui";
 import {
     pool,
-    tick,
-    factory,
-    config,
-} from "./types/sui/0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb.js";
+    pool_factory,
+    position_manager,
+    reward_manager,
+} from "./types/sui/0x91bfbc386a41afcfd9b2533058d7e915a1d3829089cc268ff4333d54d6339ca1.js";
 import * as helper from "./utils/helper.js";
 import { PoolInfo, PoolTokenState, UserPosition, UserState, UserPool } from "./schema/store.js";
-import { TypeDescriptor } from "@sentio/sdk/move";
 
 import { SuiObjectChange } from "@mysten/sui/client"
-import { SuiGlobalProcessor, SuiNetwork, SuiObjectChangeContext, SuiObjectTypeProcessor, SuiObjectProcessor } from "@sentio/sdk/sui"
-import { SuiMoveObject } from "@mysten/sui.js/client";
+import { SuiGlobalProcessor, SuiNetwork, SuiObjectChangeContext, SuiObjectTypeProcessor } from "@sentio/sdk/sui"
 
 
 /***************************************************
@@ -27,8 +24,8 @@ type ProtocolConfigType = {
 };
 const protocolConfig: ProtocolConfigType = {
     network: SuiChainId.SUI_MAINNET,
-    address: "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
-    checkpoint: 1500000n //98392410n 1500000n
+    address: "0x91bfbc386a41afcfd9b2533058d7e915a1d3829089cc268ff4333d54d6339ca1",
+    checkpoint: 1500000n
 };
 const PROTOCOLS = new Set<ProtocolConfigType>(
     [protocolConfig]
@@ -59,7 +56,7 @@ async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): P
                 token_symbol: poolInfo.symbol_0,
                 token_amount: token0,
                 token_price: price0,
-                token_decimals: poolInfo.decimals_1,
+                token_decimals: poolInfo.decimals_0,
                 token_amount_usd: token0.multipliedBy(price0),
                 volume_amount: BigDecimal(0),
                 volume_usd: BigDecimal(0),
@@ -98,84 +95,33 @@ async function createPoolSnapshot(poolObjDecoded: any, ctx: SuiObjectContext): P
     }
 }
 
-async function createPoolTokenSnapshot(ctx: SuiAddressContext, poolState: PoolTokenState): Promise<PoolTokenState> {
-    // Add your processing logic here
-
-    try {
-        console.log("Snapshot for poolState", poolState.id);
-        const obj = await ctx.client.getObject({
-            id: poolState.pool_address,
-            options: { showType: true, showContent: true },
-        });
-        if (obj && obj.data.content.dataType == "moveObject") {
-            try {
-                // get the pool info and fee
-                const poolInfo = await helper.getOrCreatePoolInfo(ctx, poolState.pool_address);
-
-                const isToken0 = poolInfo.token_0 == poolState.token_address;
-
-                console.log("Snapshot poolState with poolInfo", poolInfo);
-
-                const currentTokenAmountRaw = isToken0 ? (obj.data.content.fields as any).coin_a : (obj.data.content.fields as any).coin_b;
-                const price = await helper.getTokenPrice(ctx, poolState.token_address);
-                const currentTokenAmount = BigInt(currentTokenAmountRaw).scaleDown(isToken0 ? poolInfo.decimals_0 : poolInfo.decimals_1);
-
-                ctx.eventLogger.emit("PoolSnapshot", {
-                    timestamp: ctx.timestamp,
-                    pool_address: poolState.pool_address,
-                    token_address: poolState.token_address,
-                    token_symbol: poolState.token_symbol,
-                    token_amount: currentTokenAmount,
-                    token_amount_usd: currentTokenAmount.multipliedBy(price),
-                    volume_amount: poolState.volume_amount,
-                    volume_usd: poolState.volume_usd,
-                    fee_rate: poolInfo.fee_rate,
-                    total_fees_usd: BigDecimal(0),
-                    user_fees_usd: BigDecimal(0),
-                    protocol_fees_usd: BigDecimal(0),
-                });
-
-                // reset the token amount and volume
-                poolState.volume_amount = BigDecimal(0);
-                poolState.volume_usd = BigDecimal(0);
-            }
-            catch (error) {
-                console.error("Failed to create Snapshot", error);
-            }
-        }
-    } catch (error) {
-        console.error("Failed to get pool info", error);
-    }
-
-    return poolState;
-}
-
 /***************************************************
         Pool created event handler
 ***************************************************/
-const poolCreatedEventHandler = async (event: factory.CreatePoolEventInstance, ctx: SuiContext) => {
+const poolCreatedEventHandler = async (event: pool_factory.PoolCreatedEventInstance, ctx: SuiContext) => {
     const {
-        pool_id,
-        coin_type_a,
-        coin_type_b,
-        tick_spacing
+        account,
+        pool,
+        fee,
+        tick_spacing,
+        fee_protocol,
+        sqrt_price
     } = event.data_decoded
 
+
     console.log("Pool created", event);
-    const token0 = helper.getTokenAddressFromAddres(`0x${coin_type_a}`);
-    const token1 = helper.getTokenAddressFromAddres(`0x${coin_type_b}`);
 
     try {
         // create map object for the pool
-        const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool_id);
+        const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool);
 
         // create an event for the pool and the token0
         ctx.eventLogger.emit("Pool", {
-            pool_address: pool_id,
+            pool_address: pool,
             timestamp: ctx.timestamp.getTime(),
-            lp_token_address: pool_id, // the lp token address is the same as the pool addresss
-            lp_token_symbol: "Cetus-LP", // hardcoded for Kriya
-            token_address: token0,
+            lp_token_address: pool, // the lp token address is the same as the pool addresss
+            lp_token_symbol: "Flow-LP", // hardcoded for Kriya
+            token_address: poolInfo.token_0,
             token_symbol: poolInfo.symbol_0,
             token_decimals: poolInfo.decimals_0,
             token_index: 0,
@@ -185,11 +131,11 @@ const poolCreatedEventHandler = async (event: factory.CreatePoolEventInstance, c
 
         // create an event for the pool and the token1
         ctx.eventLogger.emit("Pool", {
-            pool_address: pool_id,
+            pool_address: pool,
             timestamp: ctx.timestamp.getTime(),
-            lp_token_address: pool_id, // the lp token address is the same as the pool addresss
+            lp_token_address: pool, // the lp token address is the same as the pool addresss
             lp_token_symbol: "Cetus-LP", // hardcoded for Kriya
-            token_address: token1,
+            token_address: poolInfo.token_1,
             token_symbol: poolInfo.symbol_1,
             token_decimals: poolInfo.decimals_1,
             token_index: 1,
@@ -198,8 +144,8 @@ const poolCreatedEventHandler = async (event: factory.CreatePoolEventInstance, c
         });
 
         // create snapshot for the pool
-        // await helper.createPoolTokenState(ctx, pool_id, poolInfo.token_0, 0, poolInfo.symbol_0, poolInfo.fee_rate);
-        // await helper.createPoolTokenState(ctx, pool_id, poolInfo.token_1, 1, poolInfo.symbol_1, poolInfo.fee_rate);
+        await helper.createPoolTokenState(ctx, pool, poolInfo.token_0, 0, poolInfo.symbol_0, poolInfo.fee_rate);
+        await helper.createPoolTokenState(ctx, pool, poolInfo.token_1, 1, poolInfo.symbol_1, poolInfo.fee_rate);
 
     } catch (error) {
         console.log("Error getting pool info", error);
@@ -212,13 +158,18 @@ const poolCreatedEventHandler = async (event: factory.CreatePoolEventInstance, c
 ***************************************************/
 const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) => {
     const {
-        atob,
         pool,
-        amount_in,
-        amount_out,
+        recipient,
+        amount_a,
+        amount_b,
+        liquidity,
+        tick_current_index,
+        tick_pre_index,
+        sqrt_price,
+        protocol_fee,
         fee_amount,
-        ref_amount,
-        after_sqrt_price,
+        a_to_b,
+        is_exact_in,
     } = event.data_decoded;
 
     // get the pool info
@@ -228,25 +179,24 @@ const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) 
     const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
     const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
 
+    const atob = a_to_b;
+
     // calculate the amount in and out
-    let rawAmount0 = atob ? amount_in : amount_out;
-    let rawAmount1 = atob ? amount_out : amount_in;
+    let rawAmount0 = amount_a;
+    let rawAmount1 = amount_b;
     const amount0 = rawAmount0.scaleDown(poolInfo.decimals_0);
     const amount1 = rawAmount1.scaleDown(poolInfo.decimals_1);
-
-    // get sender
-    const sender = ctx.transaction.transaction?.data.sender; // event.sender;
 
     if (poolInfo) {
 
         console.log("Trade", event);
 
-        let user_address = sender;
+        let user_address = recipient;
 
         ctx.eventLogger.emit("Trade", {
             timestamp: ctx.timestamp.getTime(),
             user_address: user_address,
-            taker_address: sender,
+            taker_address: recipient,
             maker_address: pool,
             pair_name: `${poolInfo.symbol_0}-${poolInfo.symbol_1}`,
             pool_address: pool,
@@ -262,20 +212,20 @@ const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) 
         });
         // update current tick index
         try {
-            poolInfo.current_tick = after_sqrt_price.asBigDecimal();
+            poolInfo.current_tick = sqrt_price;
             ctx.eventLogger.emit("Tick", {
                 timestamp: ctx.timestamp.getTime(),
                 pool_address: pool,
-                tick: after_sqrt_price.asBigDecimal()
+                tick: sqrt_price
             });
-            // await ctx.store.upsert(poolInfo);
+            await ctx.store.upsert(poolInfo);
         } catch (error) {
             console.error(`Failed to update current tick for ${pool}`, error);
         }
 
         // update the token balances in the pool state
-        // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, rawAmount0, atob ? "add" : "remove");
-        // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, rawAmount1, atob ? "remove" : "add");
+        await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, rawAmount0, atob ? "add" : "remove");
+        await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, rawAmount1, atob ? "remove" : "add");
     } else {
         console.log("Pool info not found", pool);
     }
@@ -285,115 +235,114 @@ const swapEventHandler = async (event: pool.SwapEventInstance, ctx: SuiContext) 
 /***************************************************
             Add liquidity event handler
 ***************************************************/
-const addLiquidityEventHandler = async (event: pool.AddLiquidityEventInstance, ctx: SuiContext) => {
+const addLiquidityEventHandler = async (event: pool.MintEventInstance, ctx: SuiContext) => {
     const {
+        owner,
         pool,
-        position,
-        tick_lower,
-        tick_upper,
+        tick_lower_index,
+        tick_upper_index,
+        liquidity_delta,
         amount_a,
-        amount_b,
-        liquidity,
-        after_liquidity,
+        amount_b
     } = event.data_decoded;
 
     console.log("Add Liquidity", event);
 
     const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool);
-    const sender = ctx.transaction.transaction?.data.sender; //event.sender;
 
-    const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower);
-    const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
+    const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower_index);
+    const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper_index);
 
+    const position_id = `${pool}-${owner}-${tickLower}-${tickUpper}`;
+    // update user position
+    const userPosition = await helper.updateUserPosition(ctx, poolInfo, position_id, owner, ctx.timestamp.getTime(), "add", pool, amount_a, amount_b, tickLower, tickUpper, liquidity_delta);
+
+    // update pool token state
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "add");
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "add");
+
+    // emit logs
     ctx.eventLogger.emit("LPMint", {
         timestamp: ctx.timestamp,
-        transaction_from_address: sender,
+        transaction_from_address: owner,
         event_address: "mint",
         pool_address: pool,
         tick_lower: tickLower,
         tick_upper: tickUpper,
         current_tick: poolInfo.current_tick,
         tick_spacing: poolInfo.tick_spacing,
-        nft_token_id: position,
+        nft_token_id: position_id,
         token0_address: poolInfo.token_0,
         token0_amount: amount_a,
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liquidity: after_liquidity,
+        amount_liquidity: userPosition.liquidity,
     });
-
-    // update user position
-    // await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "add", pool, amount_a, amount_b, tickLower, tickUpper, after_liquidity);
-
-    // update pool token state
-    // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "add");
-    // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "add");
 };
 
 
 /***************************************************
             Remove liquidity event handler 
 ***************************************************/
-const removeLiquidityEventHandler = async (event: pool.RemoveLiquidityEventInstance, ctx: SuiContext) => {
+const removeLiquidityEventHandler = async (event: pool.BurnEventInstance, ctx: SuiContext) => {
     const {
         pool,
-        position,
-        tick_lower,
-        tick_upper,
+        owner,
+        tick_lower_index,
+        tick_upper_index,
         amount_a,
         amount_b,
-        liquidity,
-        after_liquidity,
+        liquidity_delta
     } = event.data_decoded;
 
     console.log("Remove Liquidity", event);
 
     const poolInfo = await helper.getOrCreatePoolInfo(ctx, pool);
-    const sender = ctx.transaction.transaction?.data.sender; // event.sender
 
-    const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower);
-    const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper);
+    const tickLower = helper.getSqrtPriceFromTickIndex(tick_lower_index);
+    const tickUpper = helper.getSqrtPriceFromTickIndex(tick_upper_index);
 
+    const position_id = `${pool}-${owner}-${tickLower}-${tickUpper}`;
+    // update user position
+    const userPosition = await helper.updateUserPosition(ctx, poolInfo, position_id, owner, ctx.timestamp.getTime(), "remove", pool, amount_a, amount_b, tickLower, tickUpper, liquidity_delta);
+
+    // update pool token state
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "remove");
+    await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "remove");
+
+    // emit event
     ctx.eventLogger.emit("LPBurn", {
         timestamp: ctx.timestamp,
-        transaction_from_address: sender,
+        transaction_from_address: owner,
         event_address: "burn",
         pool_address: pool,
         tick_lower: tickLower,
         tick_upper: tickUpper,
         current_tick: poolInfo.current_tick,
         tick_spacing: poolInfo.tick_spacing,
-        nft_token_id: position,
+        nft_token_id: position_id,
         token0_address: poolInfo.token_0,
         token0_amount: amount_a,
         token1_address: poolInfo.token_1,
         token1_amount: amount_b,
         token_fees: 0,
-        amount_liquidity: after_liquidity,
+        amount_liquidity: userPosition.liquidity,
     });
-
-    // create UserState for this
-    // await helper.updateUserPosition(ctx, poolInfo, position, sender, ctx.timestamp.getTime(), "remove", pool, amount_a, amount_b, tickLower, tickUpper, after_liquidity);
-
-    // update pool token state
-    // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_0, poolInfo.decimals_0, amount_a, "remove");
-    // await helper.updatePoolTokenState(ctx, pool, poolInfo.token_1, poolInfo.decimals_1, amount_b, "remove");
 };
 
 /***************************************************
             Fee change event handler
 ***************************************************/
-const feeChangeEventHandler = async (event: pool.UpdateFeeRateEventInstance, ctx: SuiContext) => {
+const feeChangeEventHandler = async (event: pool.UpdatePoolFeeProtocolEventInstance, ctx: SuiContext) => {
     const {
         pool,
-        old_fee_rate,
-        new_fee_rate,
+        fee_protocol
     } = event.data_decoded;
     try {
         let poolFee = await helper.getOrCreatePoolInfo(ctx, pool);
-        poolFee.fee_rate = new_fee_rate.asBigDecimal();
-        // await ctx.store.upsert(poolFee);
+        poolFee.fee_rate = BigInt(fee_protocol);
+        await ctx.store.upsert(poolFee);
     } catch (error) {
         console.error("Failed to update fee rate", error);
     }
@@ -408,7 +357,7 @@ const transferEventHandler = async (changes: SuiObjectChange[], ctx: SuiObjectCh
     for (let change of changes) {
         if (change.type == 'transferred') {
             const { objectId, sender, recipient } = change;
-            // helper.updateUserPositionOwner(ctx, objectId, sender, recipient.toString());
+            helper.updateUserPositionOwner(ctx, objectId, sender, recipient.toString());
 
             // emit event
             ctx.eventLogger.emit("Transfer", {
@@ -424,40 +373,22 @@ const transferEventHandler = async (changes: SuiObjectChange[], ctx: SuiObjectCh
 };
 
 /***************************************************
-            LP and User snapshot processing functions
+            User snapshot processing functions
 ***************************************************/
-function chunkArray(array: any[], size: number = 1000) {
-    const chunks = [];
-    for (let i = 0; i < array.length; i += size) {
-        chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-}
-
-async function createUserSnapthots(ctx: SuiAddressContext) {
+async function createUserSnapshots(ctx: SuiAddressContext) {
     const results = await ctx.store.list(UserPosition, []);
-    const size = 1000;
 
     console.log("User positions", results);
-    for (const chunk of chunkArray(results)) {
-        await Promise.all(chunk.map(async (result) => {
-            await updateUserPoolData(ctx, result);
-        }));
-    }
+    // process each user state
+    await Promise.all([...results.map(async (result) => {
+        await updateUserPoolData(ctx, result);
+    })]);
 
-    // await Promise.all([...results.map(async (result) => {
-    //     await updateUserPoolData(ctx, result);
-    // })]);
     // process for each user-ppol pair
     const users = await ctx.store.list(UserPool, []);
-    for (const chunk of chunkArray(users)) {
-        await Promise.all(chunk.map(async (user) => {
-            await createUserSnapshot(ctx, user);
-        }));
-    }
-    // await Promise.all([...users.map(async (user) => {
-    //     await createUserSnapshot(ctx, user);
-    // })]);
+    await Promise.all([...users.map(async (user) => {
+        await createUserSnapshot(ctx, user);
+    })]);
 
     // clear each user-ppol pair
     await ctx.store.delete(UserPool, users.map((user) => user.id.toString()));
@@ -483,15 +414,14 @@ async function createUserSnapshot(ctx: SuiAddressContext, userPool: UserPool) {
         const poolInfo = await helper.getOrCreatePoolInfo(ctx, userPool.pool_address);
 
         // ger price info
-        const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
         const price0 = await helper.getTokenPrice(ctx, poolInfo.token_0);
+        const price1 = await helper.getTokenPrice(ctx, poolInfo.token_1);
 
         // get decimal normalized values
-        const TEN = new BigDecimal(10);
-        const amount0 = userPool.amount_0.dividedBy(TEN.pow(poolInfo.decimals_0));
-        const amount1 = userPool.amount_1.dividedBy(TEN.pow(poolInfo.decimals_1));
-        const amount0InRange = userPool.amount_0_in_range.dividedBy(TEN.pow(poolInfo.decimals_0));
-        const amount1InRange = userPool.amount_1_in_range.dividedBy(TEN.pow(poolInfo.decimals_1));
+        const amount0 = userPool.amount_0.scaleDown(poolInfo.decimals_0);
+        const amount1 = userPool.amount_1.scaleDown(poolInfo.decimals_1);
+        const amount0InRange = userPool.amount_0_in_range.scaleDown(poolInfo.decimals_0);
+        const amount1InRange = userPool.amount_1_in_range.scaleDown(poolInfo.decimals_1);
 
         // calculate the usd denominated values
         const amountUsd0 = amount0.multipliedBy(price0);
@@ -534,10 +464,10 @@ async function createUserSnapshot(ctx: SuiAddressContext, userPool: UserPool) {
         });
 
         // reset user-pool pair
-        userPool.amount_0 = BigDecimal(0);
-        userPool.amount_1 = BigDecimal(0);
-        userPool.amount_0_in_range = BigDecimal(0);
-        userPool.amount_1_in_range = BigDecimal(0);
+        userPool.amount_0 = 0n;
+        userPool.amount_1 = 0n;
+        userPool.amount_0_in_range = 0n;
+        userPool.amount_1_in_range = 0n;
         await ctx.store.upsert(userPool);
     } catch (error) {
         console.error("Failed to get user pool ", error);
@@ -553,37 +483,37 @@ PROTOCOLS.forEach((protocol) => {
     //     network: protocol.network,
     //     startCheckpoint: protocol.checkpoint,
     // }).onTimeInterval(async (_, ctx) => {
-    //     await createUserSnapthots(ctx);
+    //     await createUserSnapshots(ctx);
     // }, 24 * 60, 24 * 60);
 
-    factory.bind({
+    pool_factory.bind({
         address: protocol.address,
         network: protocol.network,
         startCheckpoint: protocol.checkpoint,
-    }).onEventCreatePoolEvent(poolCreatedEventHandler);
+    }).onEventPoolCreatedEvent(poolCreatedEventHandler)
 
     pool.bind({
         address: protocol.address,
         network: protocol.network,
         startCheckpoint: protocol.checkpoint,
-    }).onEventAddLiquidityEvent(addLiquidityEventHandler)
-        .onEventRemoveLiquidityEvent(removeLiquidityEventHandler)
-        .onEventSwapEvent(swapEventHandler)
-        .onEventUpdateFeeRateEvent(feeChangeEventHandler);
+    }).onEventSwapEvent(swapEventHandler)
+        .onEventBurnEvent(removeLiquidityEventHandler)
+        .onEventMintEvent(addLiquidityEventHandler)
+        .onEventUpdatePoolFeeProtocolEvent(feeChangeEventHandler)
 });
 
 /***************************************************
     Add event handlers for transfers for all pools
 ***************************************************/
-SuiObjectTypeProcessor.bind({
-    objectType: factory.Pools.type(),
-}).onObjectChange(transferEventHandler);
+// SuiObjectTypeProcessor.bind({
+//     objectType: pool.Pool.type(),
+// }).onObjectChange(transferEventHandler);
 
 /***************************************************
     Add snapshot for all pools
 ***************************************************/
 SuiObjectTypeProcessor.bind({
-    objectType: pool.Pool.type(),
+    objectType: pool.Pool.type()
 }).onTimeInterval(async (self, _, ctx) => {
     if (!self) { return }
     console.log(`Pool Snapshot: ctx ${ctx.objectId} at ctx.timestamp ${ctx.timestamp}`)

@@ -18,16 +18,12 @@ type PoolTokenState @entity {
 type PoolInfo @entity {
   id: ID!
   fee_rate: BigInt
-  fee_rate_x: BigInt
-  fee_rate_y: BigInt
-  current_tick: BigInt
-  tick_spacing: BigInt
-  symbol_0: String
-  symbol_1: String
-  decimals_0: Int
-  decimals_1: Int
-  token_0: String
-  token_1: String
+  name: String
+  decimals: [Int]
+  tokens: [String]
+  fees: [BigInt]
+  balances: [BigInt]
+  symbols: [String]
 }
 
 type UserState @entity {

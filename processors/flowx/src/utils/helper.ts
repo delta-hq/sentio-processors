@@ -223,6 +223,7 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
             userPosition.amount_0 = userPosition.amount_0 - amount0;
             userPosition.amount_1 = userPosition.amount_1 - amount1;
             userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+
         }
         //  add the liquidty, since it's a delta and has a sign
         userPosition.liquidity = userPosition.liquidity + liquidity;
@@ -371,7 +372,7 @@ export const getPairFriendlyName = (token0: string, token1: string): string => {
     return `${name0}-${name1}`;
 }
 
-export const convertTick = (tick: number): number => {
+const convertTick = (tick: number): number => {
     if (tick > 2147483647) {
         tick = (tick - 4294967296);
     }
@@ -379,12 +380,7 @@ export const convertTick = (tick: number): number => {
 }
 
 export const getSqrtPriceFromTickIndex = (tick: i32.I32): bigint => {
-    const tickConverted = BigInt.asIntN(
-        32,
-        BigInt(tick.bits)
-    );
-    return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tick.bits)).toString());
-    // return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tickConverted)).toString());
+    return BigInt(TickMath.tickIndexToSqrtPriceX64(convertTick(tick.bits)).toString());
 }
 
 export const getObjectOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, id: string): Promise<string> => {

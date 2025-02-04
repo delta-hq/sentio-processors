@@ -4,9 +4,8 @@ import { getPriceByType } from "@sentio/sdk/utils";
 import { PoolInfo, PoolTokenState, UserState, UserPosition, UserPool } from "../schema/store.js";
 import { BigDecimal } from "@sentio/sdk";
 import BN from "bn.js";
-import { i32, liquidity_math } from "../types/sui/0x25929e7f29e0a30eb4e692952ba1b5b65a3a4d65ab5f2a32e1ba3edcb587f26d.js";
-import { ClmmPosition } from "@flowx-finance/sdk"
 import { TickMath, ClmmPoolUtil } from "@cetusprotocol/cetus-sui-clmm-sdk";
+import { i32, pool } from "../types/sui/0xf6c05e2d9301e6e91dc6ab6c3ca918f7d55896e1f1edd64adc0e615cde27ebf1.js";
 
 // map for caching the pools
 const poolInfoMap: Map<string, PoolInfo> = new Map();
@@ -14,23 +13,6 @@ const poolInfoMap: Map<string, PoolInfo> = new Map();
 /***************************************************
             PoolInfo handling functions 
 ***************************************************/
-export function getCoinFullAddress(type: string) {
-    let coin_a_address = ""
-    let coin_b_address = ""
-
-    const regex_a = /<[^,]+,/g;
-    const regex_b = /0x[^\s>]+>/g;
-    const matches_a = type.match(regex_a)
-    const matches_b = type.match(regex_b)
-    if (matches_a) {
-        coin_a_address = matches_a[0].slice(1, -1)
-    }
-    if (matches_b) {
-        coin_b_address = matches_b[0].slice(0, -1)
-    }
-    return [coin_a_address, coin_b_address]
-}
-
 export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
     let [symbol0, symbol1, decimals0, decimals1, token0, token1, fee, current_tick, tick_spacing] = ["", "", 0, 0, "", "", 0, 0, 0];
 
@@ -40,19 +22,11 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
             options: { showType: true, showContent: true },
         });
         if (obj && obj.data.content.dataType == "moveObject") {
-            // token0 = `0x${(obj.data.content.fields as any).coin_type_b}`;
-            // token1 = `0x${(obj.data.content.fields as any).coin_type_b}`;
-
-            let type = obj.data.type;
-            if (type) {
-                [token0, token1] = getCoinFullAddress(type)
-            }
+            token0 = `0x${(obj.data.content.fields as any).type_x.fields.name}`;
+            token1 = `0x${(obj.data.content.fields as any).type_y.fields.name}`;
 
             const metadataToken0 = await ctx.client.getCoinMetadata({ coinType: token0 });
             const metadataToken1 = await ctx.client.getCoinMetadata({ coinType: token1 });
-
-            fee = (obj.data?.content.fields as any).swap_fee_rate;
-            tick_spacing = (obj.data?.content.fields as any).tick_spacing;
 
             current_tick = (obj.data?.content.fields as any).sqrt_price;
 
@@ -74,11 +48,11 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
         symbol_1: symbol1,
         decimals_0: decimals0,
         decimals_1: decimals1,
-        fee_rate: BigInt(fee),
-        current_tick: BigInt(current_tick),
-        tick_spacing: BigInt(tick_spacing),
+        fee_rate: BigDecimal(fee),
         token_0: token0,
-        token_1: token1
+        token_1: token1,
+        current_tick: BigDecimal(current_tick),
+        tick_spacing: BigDecimal(tick_spacing),
     });
     return Promise.resolve(poolInfo);
 }
@@ -100,7 +74,7 @@ export const getOrCreatePoolInfo = async (ctx: SuiContext | SuiObjectContext | S
 /***************************************************
             PoolToken handling functions 
 ***************************************************/
-export const createPoolTokenState = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string, token: string, tokenIndex: number, tokenSymbol: string, fee: bigint): Promise<void> => {
+export const createPoolTokenState = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string, token: string, tokenIndex: number, tokenSymbol: string, fee: BigDecimal): Promise<void> => {
     try {
         const id = `${poolId}_${token}`;
 
@@ -113,7 +87,7 @@ export const createPoolTokenState = async (ctx: SuiContext | SuiObjectContext | 
             token_symbol: tokenSymbol,
             token_amount: BigDecimal(0),
             token_amount_usd: BigDecimal(0),
-            fee_rate: BigInt(fee),
+            fee_rate: fee,
             volume_amount: BigDecimal(0),
             volume_usd: BigDecimal(0),
             total_fees_usd: BigDecimal(0),
@@ -142,7 +116,7 @@ export const getOrCreatePoolTokenState = async (ctx: SuiContext | SuiObjectConte
             token_symbol: getCoinTypeFriendlyName(token, metadata.symbol),
             token_amount: BigDecimal(0),
             token_amount_usd: BigDecimal(0),
-            fee_rate: 0n,
+            fee_rate: BigDecimal(0),
             volume_amount: BigDecimal(0),
             volume_usd: BigDecimal(0),
             total_fees_usd: BigDecimal(0),
@@ -177,15 +151,13 @@ export const updatePoolTokenState = async (ctx: SuiContext | SuiObjectContext | 
 /***************************************************
             UserState handling functions 
 ***************************************************/
-export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolInfo: PoolInfo,
-    positionId: string, user: string, timestamp: number, eventType: string, poolId: string,
-    amount0: bigint, amount1: bigint, lowerTick: bigint, upperTick: bigint, liquidity: bigint): Promise<UserPosition> => {
-
+export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolInfo: PoolInfo, positionId: string, user: string, timestamp: number, eventType: string, poolId: string, amount0: bigint, amount1: bigint, lowerTick: BigDecimal, upperTick: BigDecimal, liquidity: bigint): Promise<void> => {
     try {
         // get token prices
         const price0 = await getTokenPrice(ctx, poolInfo.token_0);
-        const price1 = await getTokenPrice(ctx, poolInfo.token_1);
+        const price1 = await getTokenPrice(ctx, poolInfo.token_0);
 
+        // check if there is a position for this user in that pool in that range
         // check if there is a position for this user in that pool in that range
         let userPosition = await ctx.store.get(UserPosition, positionId);
 
@@ -196,49 +168,36 @@ export const updateUserPosition = async (ctx: SuiContext | SuiObjectContext | Su
                 user_address: user,
                 position_id: positionId,
                 pool_address: poolId,
-                amount_0: 0n,
-                amount_1: 0n,
+                amount_0: BigDecimal(0),
+                amount_1: BigDecimal(0),
                 amount_usd: BigDecimal(0),
                 lower_tick: lowerTick,
                 upper_tick: upperTick,
-                liquidity: 0n,
-            });
-
-            // emit transfer event
-            ctx.eventLogger.emit("Transfer", {
-                timestamp: ctx.timestamp,
-                transaction_from_address: user.toString(),
-                nft_token_id: positionId,
-                from_address: "0x0000000000",
-                to_address: user.toString(),
-                event_type: "transfer",
+                liquidity: BigDecimal(0),
             });
         }
 
         if (eventType === "add") {
-            userPosition.amount_0 = userPosition.amount_0 + amount0;
-            userPosition.amount_1 = userPosition.amount_1 + amount1;
-            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+            userPosition.amount_0 = userPosition.amount_0.plus(amount0.asBigDecimal());
+            userPosition.amount_1 = userPosition.amount_1.plus(amount1.asBigDecimal())
+            userPosition.amount_usd = userPosition.amount_usd.plus(amount0.asBigDecimal().multipliedBy(price0)).plus(amount1.asBigDecimal().multipliedBy(price1));
         } else if (eventType === "remove") {
-            userPosition.amount_0 = userPosition.amount_0 - amount0;
-            userPosition.amount_1 = userPosition.amount_1 - amount1;
-            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.scaleDown(poolInfo.decimals_0).multipliedBy(price0).plus(amount1.scaleDown(poolInfo.decimals_1).multipliedBy(price1)));
+            userPosition.amount_0 = userPosition.amount_0.minus(amount0.asBigDecimal());
+            userPosition.amount_1 = userPosition.amount_1.minus(amount1.asBigDecimal());
+            userPosition.amount_usd = userPosition.amount_usd.minus(amount0.asBigDecimal().multipliedBy(price0)).plus(amount1.asBigDecimal().multipliedBy(price1));
         }
-        //  add the liquidty, since it's a delta and has a sign
-        userPosition.liquidity = userPosition.liquidity + liquidity;
+        userPosition.liquidity = liquidity.asBigDecimal();
         userPosition.timestamp = BigInt(timestamp);
 
         await ctx.store.upsert(userPosition);
-
-        return userPosition;
     } catch (error) {
         console.log("Error creating user state", error);
-        return null;
     }
 }
 
 export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, positionId: string, oldUser: string, newUser: string,): Promise<void> => {
-    let userPosition = await ctx.store.get(UserPosition, positionId);
+    const userPositionId = `${positionId}_${oldUser}`;
+    let userPosition = await ctx.store.get(UserPosition, userPositionId);
     console.log(`Updating user position owner from ${oldUser} to ${newUser}`);
     if (userPosition) {
         userPosition.user_address = newUser;
@@ -247,7 +206,7 @@ export const updateUserPositionOwner = async (ctx: SuiContext | SuiObjectContext
     }
 };
 
-export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, poolInfo: PoolInfo, user: string, lowerTick: bigint, upperTick: bigint, liquidity: bigint): Promise<void> => {
+export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext | SuiObjectChangeContext, poolInfo: PoolInfo, user: string, lowerTick: BigDecimal, upperTick: BigDecimal, liquidity: BigDecimal): Promise<void> => {
     try {
         let id = `${poolInfo.id}_${user}`;
         let userPool = await ctx.store.get(UserPool, id);
@@ -256,47 +215,51 @@ export const updateUserPool = async (ctx: SuiContext | SuiObjectContext | SuiAdd
                 id,
                 user_address: user,
                 pool_address: poolInfo.id.toString(),
-                amount_0: 0n,
-                amount_1: 0n,
-                amount_0_in_range: 0n,
-                amount_1_in_range: 0n,
+                amount_0: BigDecimal(0),
+                amount_1: BigDecimal(0),
+                amount_0_in_range: BigDecimal(0),
+                amount_1_in_range: BigDecimal(0),
             });
         }
 
         try {
-            console.log(`Process Getting token amounts from ${user} liquidity`, liquidity, liquidity.toString());
-            console.log(`Process Getting token amounts from ${user} poolinf`, poolInfo.current_tick, poolInfo.current_tick.toString());
-            console.log(`Process Getting token amounts from ${user} lowerTick`, lowerTick, lowerTick.toString());
-            console.log(`Process Getting token amounts from ${user} upperTick`, upperTick, upperTick.toString());
+            console.log(`Process Getting token amounts from ${user} liquidity`, liquidity, liquidity.toFixed(0));
+            console.log(`Process Getting token amounts from ${user} poolinf`, poolInfo.current_tick, poolInfo.current_tick.toFixed(0));
+            console.log(`Process Getting token amounts from ${user} lowerTick`, lowerTick, lowerTick.toFixed(0));
+            console.log(`Process Getting token amounts from ${user} upperTick`, upperTick, upperTick.toFixed(0));
             const amounts = ClmmPoolUtil.getCoinAmountFromLiquidity(
-                new BN(liquidity.toString()),
-                new BN(poolInfo.current_tick.toString()),
-                new BN(lowerTick.toString()),
-                new BN(upperTick.toString()),
+                new BN(liquidity.toFixed(0)),
+                new BN(poolInfo.current_tick.toFixed(0)),
+                new BN(lowerTick.toFixed(0)),
+                new BN(upperTick.toFixed(0)),
                 false
             );
+            // const amounts = {
+            //     coinA: 0,
+            //     coinB: 0,
+            // }
             const { coinA, coinB } = amounts;
             console.log(`Process Getting token amounts from ${user} coinA ${coinA} coinB ${coinB}`);
-            const amount0 = BigInt(coinA.toString());//BigInt(coinA.toString()).asBigDecimal();
-            const amount1 = BigInt(coinB.toString());
+            const amount0 = BigInt(coinA.toString()).asBigDecimal();
+            const amount1 = BigInt(coinB.toString()).asBigDecimal();
             console.log(`Process Getting token amounts from ${user} amount0 ${amount0} amount1 ${amount1}`);
 
-            userPool.amount_0 = userPool.amount_0 + amount0;
-            userPool.amount_1 = userPool.amount_1 + amount1;
+            userPool.amount_0 = userPool.amount_0.plus(amount0);
+            userPool.amount_1 = userPool.amount_1.plus(amount1);
 
-            if (poolInfo.current_tick >= lowerTick && poolInfo.current_tick <= upperTick) {
-                userPool.amount_0_in_range = userPool.amount_0_in_range + amount0;
-                userPool.amount_1_in_range = userPool.amount_1_in_range + amount1;
+            if (poolInfo.current_tick.lte(upperTick) && poolInfo.current_tick.gte(lowerTick)) {
+                userPool.amount_0_in_range = userPool.amount_0_in_range.plus(amount0);
+                userPool.amount_1_in_range = userPool.amount_1_in_range.plus(amount1);
             }
 
         } catch (error) {
             console.log(`Error getting token amounts from liquidity ${user}`, error);
         }
 
-        // userPool.amount_0 = userPool.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0;
-        // userPool.amount_1 = userPool.amount_1.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1;
-        // userPool.amount_0_in_range = userPool.amount_0_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0_in_range;
-        // userPool.amount_1_in_range = userPool.amount_1_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1_in_range;
+        userPool.amount_0 = userPool.amount_0.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0;
+        userPool.amount_1 = userPool.amount_1.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1;
+        userPool.amount_0_in_range = userPool.amount_0_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_0_in_range;
+        userPool.amount_1_in_range = userPool.amount_1_in_range.lt(BigDecimal(0)) ? BigDecimal(0) : userPool.amount_1_in_range;
 
         await ctx.store.upsert(userPool);
     } catch (error) {
@@ -356,64 +319,19 @@ export const getCoinTypeFriendlyName = (coinType: string, metadataSymbol?: strin
     }
 }
 
-export const getTokenAddressFromAddres = (address: string): string => {
-    switch (address) {
-        case "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI":
-            return "0x2::sui::SUI";
-        default:
-            return address;
-    }
-};
-
 export const getPairFriendlyName = (token0: string, token1: string): string => {
     let name0 = getCoinTypeFriendlyName(token0);
     let name1 = getCoinTypeFriendlyName(token1);
     return `${name0}-${name1}`;
 }
 
-export const convertTick = (tick: number): number => {
+const convertTick = (tick: number): number => {
     if (tick > 2147483647) {
         tick = (tick - 4294967296);
     }
     return tick;
 }
 
-export const getSqrtPriceFromTickIndex = (tick: i32.I32): bigint => {
-    const tickConverted = BigInt.asIntN(
-        32,
-        BigInt(tick.bits)
-    );
-    return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tick.bits)).toString());
-    // return BigInt(TickMath.tickIndexToSqrtPriceX64(Number(tickConverted)).toString());
-}
-
-export const getObjectOwner = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, id: string): Promise<string> => {
-    try {
-        ctx.client.tryGetPastObject
-        const obj = await ctx.client.getObject({
-            id,
-            options: {
-                showOwner: true,
-            },
-        });
-        if (!obj) {
-            console.log("No object found for id", id);
-            return "none";
-        }
-        if (obj.error) {
-            console.log("Error in object owner", obj.error);
-            return "none";
-        }
-        const owner =
-            (obj as any)?.data?.owner?.AddressOwner ??
-            (obj as any)?.data?.owner?.ObjectOwner;
-        if (!owner) {
-            console.log("No owner found for object", obj);
-        }
-        return owner;
-    }
-    catch (error) {
-        console.log("Error getting object owner", error);
-    }
-    return "none";
+export const getSqrtPriceFromTickIndex = (tick: i32.I32): BigDecimal => {
+    return BigDecimal(TickMath.tickIndexToSqrtPriceX64(convertTick(tick.bits)).toString());
 }

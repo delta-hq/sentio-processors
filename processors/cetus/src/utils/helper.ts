@@ -84,14 +84,14 @@ export const buildPoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddr
 }
 
 export const getOrCreatePoolInfo = async (ctx: SuiContext | SuiObjectContext | SuiAddressContext, poolId: string): Promise<PoolInfo> => {
-    // let poolInfo = poolInfoMap.get(poolId);
+    let poolInfo = poolInfoMap.get(poolId);
     // if (!poolInfo)
-    let poolInfo = await ctx.store.get(PoolInfo, poolId);
+    // let poolInfo = await ctx.store.get(PoolInfo, poolId);
     if (!poolInfo) {
         console.log(`Pool info not found in store, building pool info for ${poolId}`);
         poolInfo = await buildPoolInfo(ctx, poolId);
         poolInfoMap.set(poolId, poolInfo);
-        await ctx.store.upsert(poolInfo);
+        // await ctx.store.upsert(poolInfo);
     }
     return poolInfo;
 }

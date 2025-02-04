@@ -24,7 +24,7 @@ interface PoolTokenStateConstructorInput {
   token_amount_usd?: BigDecimal;
   volume_amount: BigDecimal;
   volume_usd?: BigDecimal;
-  fee_rate: BigInt;
+  fee_rate: BigDecimal;
   total_fees_usd?: BigDecimal;
   user_fees_usd?: BigDecimal;
   protocol_fees_usd?: BigDecimal;
@@ -71,8 +71,8 @@ export class PoolTokenState extends AbstractEntity  {
 	volume_usd?: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	fee_rate: BigInt
+	@Column("BigDecimal")
+	fee_rate: BigDecimal
 
 	@Column("BigDecimal")
 	total_fees_usd?: BigDecimal
@@ -89,11 +89,11 @@ export class PoolTokenState extends AbstractEntity  {
 
 interface PoolInfoConstructorInput {
   id: ID;
-  fee_rate?: BigInt;
-  fee_rate_x?: BigInt;
-  fee_rate_y?: BigInt;
-  current_tick?: BigInt;
-  tick_spacing?: BigInt;
+  fee_rate?: BigDecimal;
+  fee_rate_x?: BigDecimal;
+  fee_rate_y?: BigDecimal;
+  current_tick?: BigDecimal;
+  tick_spacing?: BigDecimal;
   symbol_0?: String;
   symbol_1?: String;
   decimals_0?: Int;
@@ -108,20 +108,20 @@ export class PoolInfo extends AbstractEntity  {
 	@Column("ID")
 	id: ID
 
-	@Column("BigInt")
-	fee_rate?: BigInt
+	@Column("BigDecimal")
+	fee_rate?: BigDecimal
 
-	@Column("BigInt")
-	fee_rate_x?: BigInt
+	@Column("BigDecimal")
+	fee_rate_x?: BigDecimal
 
-	@Column("BigInt")
-	fee_rate_y?: BigInt
+	@Column("BigDecimal")
+	fee_rate_y?: BigDecimal
 
-	@Column("BigInt")
-	current_tick?: BigInt
+	@Column("BigDecimal")
+	current_tick?: BigDecimal
 
-	@Column("BigInt")
-	tick_spacing?: BigInt
+	@Column("BigDecimal")
+	tick_spacing?: BigDecimal
 
 	@Column("String")
 	symbol_0?: String
@@ -168,10 +168,10 @@ interface UserPoolConstructorInput {
   id: ID;
   user_address: String;
   pool_address: String;
-  amount_0: BigInt;
-  amount_1: BigInt;
-  amount_0_in_range: BigInt;
-  amount_1_in_range: BigInt;
+  amount_0: BigDecimal;
+  amount_1: BigDecimal;
+  amount_0_in_range: BigDecimal;
+  amount_1_in_range: BigDecimal;
 }
 @Entity("UserPool")
 export class UserPool extends AbstractEntity  {
@@ -189,20 +189,20 @@ export class UserPool extends AbstractEntity  {
 	pool_address: String
 
 	@Required
-	@Column("BigInt")
-	amount_0: BigInt
+	@Column("BigDecimal")
+	amount_0: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	amount_1: BigInt
+	@Column("BigDecimal")
+	amount_1: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	amount_0_in_range: BigInt
+	@Column("BigDecimal")
+	amount_0_in_range: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	amount_1_in_range: BigInt
+	@Column("BigDecimal")
+	amount_1_in_range: BigDecimal
   constructor(data: UserPoolConstructorInput) {super()}
   
 }
@@ -214,12 +214,12 @@ interface UserPositionConstructorInput {
   position_id: String;
   pool_address: String;
   timestamp: BigInt;
-  amount_0: BigInt;
-  amount_1: BigInt;
+  amount_0: BigDecimal;
+  amount_1: BigDecimal;
   amount_usd: BigDecimal;
-  lower_tick: BigInt;
-  upper_tick: BigInt;
-  liquidity: BigInt;
+  lower_tick: BigDecimal;
+  upper_tick: BigDecimal;
+  liquidity: BigDecimal;
 }
 @Entity("UserPosition")
 export class UserPosition extends AbstractEntity  {
@@ -245,28 +245,28 @@ export class UserPosition extends AbstractEntity  {
 	timestamp: BigInt
 
 	@Required
-	@Column("BigInt")
-	amount_0: BigInt
+	@Column("BigDecimal")
+	amount_0: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	amount_1: BigInt
+	@Column("BigDecimal")
+	amount_1: BigDecimal
 
 	@Required
 	@Column("BigDecimal")
 	amount_usd: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	lower_tick: BigInt
+	@Column("BigDecimal")
+	lower_tick: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	upper_tick: BigInt
+	@Column("BigDecimal")
+	upper_tick: BigDecimal
 
 	@Required
-	@Column("BigInt")
-	liquidity: BigInt
+	@Column("BigDecimal")
+	liquidity: BigDecimal
   constructor(data: UserPositionConstructorInput) {super()}
   
 }
@@ -283,7 +283,7 @@ const source = `type PoolTokenState @entity {
   token_amount_usd: BigDecimal
   volume_amount: BigDecimal!
   volume_usd: BigDecimal
-  fee_rate: BigInt!
+  fee_rate: BigDecimal!
   total_fees_usd: BigDecimal
   user_fees_usd: BigDecimal
   protocol_fees_usd: BigDecimal
@@ -291,11 +291,11 @@ const source = `type PoolTokenState @entity {
 
 type PoolInfo @entity {
   id: ID!
-  fee_rate: BigInt
-  fee_rate_x: BigInt
-  fee_rate_y: BigInt
-  current_tick: BigInt
-  tick_spacing: BigInt
+  fee_rate: BigDecimal
+  fee_rate_x: BigDecimal
+  fee_rate_y: BigDecimal
+  current_tick: BigDecimal
+  tick_spacing: BigDecimal
   symbol_0: String
   symbol_1: String
   decimals_0: Int
@@ -313,10 +313,10 @@ type UserPool @entity {
   id: ID! # user-position id
   user_address: String!
   pool_address: String!
-  amount_0: BigInt!
-  amount_1: BigInt!
-  amount_0_in_range: BigInt!
-  amount_1_in_range: BigInt!
+  amount_0: BigDecimal!
+  amount_1: BigDecimal!
+  amount_0_in_range: BigDecimal!
+  amount_1_in_range: BigDecimal!
 }
 
 type UserPosition @entity {
@@ -325,12 +325,12 @@ type UserPosition @entity {
   position_id: String!
   pool_address: String!
   timestamp: BigInt!
-  amount_0: BigInt!
-  amount_1: BigInt!
+  amount_0: BigDecimal!
+  amount_1: BigDecimal!
   amount_usd: BigDecimal!
-  lower_tick: BigInt!
-  upper_tick: BigInt!
-  liquidity: BigInt!
+  lower_tick: BigDecimal!
+  upper_tick: BigDecimal!
+  liquidity: BigDecimal!
 }
 `
 DatabaseSchema.register({
